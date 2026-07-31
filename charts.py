@@ -400,7 +400,7 @@ def cost_gauge_caption(scale_max: float, avg: float, top_site: str | None) -> st
 # ---------------------------------------------------------------------------
 # 5) Mode Kalkulator — donut per role untuk 1 jenis unit
 # ---------------------------------------------------------------------------
-def role_donut(fte_table: dict, height: int = 210) -> go.Figure:
+def role_donut(fte_table: dict, height: int = 210, show_legend: bool = True) -> go.Figure:
     roles = ["Mechanic", "Electric", "Welder"]
     vals = [fte_table.get(r, {}).get("Tot", 0) for r in roles]
     total = sum(vals)
@@ -431,8 +431,8 @@ def role_donut(fte_table: dict, height: int = 210) -> go.Figure:
     fig.update_layout(
         **_layout(
             height,
-            margin=dict(l=4, r=4, t=4, b=24),
-            showlegend=True,
+            margin=dict(l=4, r=4, t=4, b=24 if show_legend else 4),
+            showlegend=show_legend,
             legend=dict(
                 orientation="h", yanchor="top", y=0.04, xanchor="center", x=0.5,
                 font=dict(family="Public Sans", size=10, color=NEUTRAL["text_muted"]),
