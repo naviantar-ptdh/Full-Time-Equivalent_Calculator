@@ -422,6 +422,37 @@ def render_calculator_mode(backend):
 
     result = st.session_state.get("calc1_result")
 
+    # Tabel Rincian ditumpuk di BAWAH kartu Parameter, di kolom KIRI yang sama
+    # (bukan sebagai blok penuh-lebar terpisah setelah kedua kolom). Alasannya:
+    # st.columns membuat baris setinggi kolom TERTINGGI (kolom kanan: readout +
+    # donut, ~470px), lalu elemen penuh-lebar berikutnya baru mulai SETELAH
+    # baris itu selesai — kalau kolom kiri jauh lebih pendek, area di
+    # bawahnya cuma jadi latar abu-abu kosong sebelum tabel muncul. Menumpuk
+    # tabel di kolom kiri membuat kedua kolom berakhir di tinggi yang mirip,
+    # jadi tidak ada lagi ruang kosong yang menganga.
+    with left:
+        if result:
+            st.write("")
+            with theme.card("calc_table", "Rincian per role"):
+                rows, sums = [], {"M1": 0.0, "M2": 0.0, "M3": 0.0, "Tot": 0.0}
+                for role in ("Mechanic", "Electric", "Welder"):
+                    v = result["fte"][role]
+                    rows.append([theme.ROLE_LABEL[role], num(v["M1"]), num(v["M2"]),
+                                 num(v["M3"]), num(v["Tot"])])
+                    for kk in sums:
+                        sums[kk] += v.get(kk, 0)
+                st.markdown(
+                    theme.table_html(
+                        ["Role", "M1", "M2", "M3", "Total"], rows,
+                        total_row=["TOTAL", num(sums["M1"]), num(sums["M2"]),
+                                   num(sums["M3"]), num(sums["Tot"])],
+                        total_col=4,
+                    ),
+                    unsafe_allow_html=True,
+                )
+                with st.expander("Nilai intermediate (H / I / J, load factor, RACI)"):
+                    st.json(result.get("intermediate", {}))
+
     with right:
         if result:
             tot = result["fte"]["Total"]
@@ -452,27 +483,6 @@ def render_calculator_mode(backend):
                 ),
                 unsafe_allow_html=True,
             )
-
-    if result:
-        with theme.card("calc_table", "Rincian per role"):
-            rows, sums = [], {"M1": 0.0, "M2": 0.0, "M3": 0.0, "Tot": 0.0}
-            for role in ("Mechanic", "Electric", "Welder"):
-                v = result["fte"][role]
-                rows.append([theme.ROLE_LABEL[role], num(v["M1"]), num(v["M2"]),
-                             num(v["M3"]), num(v["Tot"])])
-                for k in sums:
-                    sums[k] += v.get(k, 0)
-            st.markdown(
-                theme.table_html(
-                    ["Role", "M1", "M2", "M3", "Total"], rows,
-                    total_row=["TOTAL", num(sums["M1"]), num(sums["M2"]),
-                               num(sums["M3"]), num(sums["Tot"])],
-                    total_col=4,
-                ),
-                unsafe_allow_html=True,
-            )
-            with st.expander("Nilai intermediate (H / I / J, load factor, RACI)"):
-                st.json(result.get("intermediate", {}))
 
 
 # ===========================================================================
@@ -629,13 +639,10 @@ def render_basecase_mode(backend):
     # ---------------- KPI ----------------
     k = st.columns(5, gap="small")
     with k[0]:
-        pct1 = level_totals["M1"] / grand_total * 100 if grand_total else 0
-        pct2 = level_totals["M2"] / grand_total * 100 if grand_total else 0
-        pct3 = level_totals["M3"] / grand_total * 100 if grand_total else 0
         st.markdown(
             theme.kpi_card(
-                "Total Mekanik Needs", num(grand_total),
-                f"M1 <b>{num(pct1, 0)}%</b> · M2 <b>{num(pct2, 0)}%</b> · M3 <b>{num(pct3, 0)}%</b>",
+                "Tot Mec Needs", num(grand_total),
+                "",
                 accent=theme.BRAND["navy"], emoji="👷",
             ),
             unsafe_allow_html=True,
