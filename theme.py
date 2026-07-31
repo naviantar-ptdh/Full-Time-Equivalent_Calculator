@@ -248,7 +248,7 @@ def inject_css():
            HEADER BAND (orange gradient, logo putih) — signature
            ===================================================== */
         .dh-band {{
-            background: linear-gradient(100deg, {BRAND['header_l']} 0%, {BRAND['orange']} 38%, {BRAND['amber']} 100%);
+            background: linear-gradient(to top, {BRAND['header_l']} 0%, {BRAND['orange']} 45%, {BRAND['amber']} 100%);
             border-radius: 14px;
             padding: 14px 20px;
             display: flex; align-items: center; gap: 18px;
