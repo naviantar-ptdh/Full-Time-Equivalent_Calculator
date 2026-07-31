@@ -756,7 +756,7 @@ def main():
     st.session_state.setdefault("app_mode", "calculator")
 
     with st.sidebar:
-        logo = theme.image_uri("logo_putih.png")
+        logo = theme.image_uri("logo_putih (2).png")
         mark = f'<div class="mark"><img src="{logo}" alt=""/></div>' if logo else '<div class="mark"></div>'
         st.markdown(
             f'<div class="dh-side-brand">{mark}'
