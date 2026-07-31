@@ -366,30 +366,31 @@ def render_calculator_mode(backend):
     sites = backend.sites or []
     sub_cats = backend.sub_categories or list(backend.load_factor.index)
 
-    left, right = st.columns([1.25, 1], gap="medium")
+    # ---------------- Parameter: satu kartu MELEBAR penuh ----------------
+    # Empat input utama berjajar dalam satu baris, competency factor di baris
+    # sendiri (butuh lebar untuk track slider), lalu catatan jarak + tombol.
+    # Hasil perhitungan menyusul DI BAWAH kartu ini, bukan di sampingnya.
+    with theme.card("calc_param", "Parameter", "semua kolom wajib"):
+        p1, p2, p3, p4 = st.columns(4, gap="medium")
+        with p1:
+            site = st.selectbox("Site", options=sites, index=None,
+                                placeholder="Pilih site…", key="calc1_site")
+        with p2:
+            sub_category = st.selectbox("Jenis equipment", options=sub_cats, index=None,
+                                        placeholder="Pilih sub category…", key="calc1_subcat")
+        with p3:
+            jumlah_unit = st.number_input("Jumlah unit", min_value=0.0, value=1.0,
+                                          step=1.0, key="calc1_jml")
+        with p4:
+            pa = st.number_input("Target PA (%)", min_value=1.0, max_value=100.0,
+                                 value=85.0, step=1.0, key="calc1_pa")
 
-    with left:
-        with theme.card("calc_param", "Parameter", "semua kolom wajib"):
-            c1, c2 = st.columns(2)
-            with c1:
-                site = st.selectbox("Site", options=sites, index=None,
-                                    placeholder="Pilih site…", key="calc1_site")
-            with c2:
-                sub_category = st.selectbox("Jenis equipment", options=sub_cats, index=None,
-                                            placeholder="Pilih sub category…", key="calc1_subcat")
+        cf = st.slider("Competency factor", min_value=0.1, max_value=1.0,
+                       value=0.6, step=0.01, key="calc1_cf")
 
-            c3, c4 = st.columns(2)
-            with c3:
-                jumlah_unit = st.number_input("Jumlah unit", min_value=0.0, value=1.0,
-                                              step=1.0, key="calc1_jml")
-            with c4:
-                pa = st.number_input("Target PA (%)", min_value=1.0, max_value=100.0,
-                                     value=85.0, step=1.0, key="calc1_pa")
-
-            cf = st.slider("Competency factor", min_value=0.1, max_value=1.0,
-                           value=0.6, step=0.01, key="calc1_cf")
-
-            jarak_km = backend.jarak.get(site) if site else None
+        jarak_km = backend.jarak.get(site) if site else None
+        n1, n2 = st.columns([2.6, 1], gap="medium")
+        with n1:
             if site and jarak_km is None:
                 st.markdown(
                     theme.inline_note(
@@ -406,7 +407,12 @@ def render_calculator_mode(backend):
                     ),
                     unsafe_allow_html=True,
                 )
-
+            else:
+                st.markdown(
+                    theme.inline_note("Pilih site dan jenis equipment untuk mengaktifkan perhitungan."),
+                    unsafe_allow_html=True,
+                )
+        with n2:
             with st.container(key="calc_go"):
                 compute_clicked = st.button(
                     "Hitung FTE", width="stretch", key="calc1_button",
@@ -431,69 +437,73 @@ def render_calculator_mode(backend):
 
     result = st.session_state.get("calc1_result")
 
-    # Tabel Rincian ditumpuk di BAWAH kartu Parameter, di kolom KIRI yang sama
-    # (bukan sebagai blok penuh-lebar terpisah setelah kedua kolom). Alasannya:
-    # st.columns membuat baris setinggi kolom TERTINGGI (kolom kanan: readout +
-    # donut, ~470px), lalu elemen penuh-lebar berikutnya baru mulai SETELAH
-    # baris itu selesai — kalau kolom kiri jauh lebih pendek, area di
-    # bawahnya cuma jadi latar abu-abu kosong sebelum tabel muncul. Menumpuk
-    # tabel di kolom kiri membuat kedua kolom berakhir di tinggi yang mirip,
-    # jadi tidak ada lagi ruang kosong yang menganga.
-    with left:
-        if result:
-            st.write("")
-            with theme.card("calc_table", "Rincian per role"):
-                rows, sums = [], {"M1": 0.0, "M2": 0.0, "M3": 0.0, "Tot": 0.0}
-                for role in ("Mechanic", "Electric", "Welder"):
-                    v = result["fte"][role]
-                    rows.append([theme.ROLE_LABEL[role], num(v["M1"]), num(v["M2"]),
-                                 num(v["M3"]), num(v["Tot"])])
-                    for kk in sums:
-                        sums[kk] += v.get(kk, 0)
-                st.markdown(
-                    theme.table_html(
-                        ["Role", "M1", "M2", "M3", "Total"], rows,
-                        total_row=["TOTAL", num(sums["M1"]), num(sums["M2"]),
-                                   num(sums["M3"]), num(sums["Tot"])],
-                        total_col=4,
-                    ),
-                    unsafe_allow_html=True,
-                )
+    st.write("")
 
-    with right:
-        if result:
-            tot = result["fte"]["Total"]
-            cost_lv = result["cost"]["Total"]
-            cost_tot = cost_lv["Tot"]
-            # Qty & cost di sini sengaja TOTAL lintas role (mekanik +
-            # electrician + welder digabung) — rincian per role sudah ada di
-            # tabel kolom kiri, jadi readout cukup menjawab "berapa orang dan
-            # berapa biayanya di tiap level".
+    if not result:
+        st.markdown(
+            theme.empty_state(
+                "Belum ada hasil",
+                "Lengkapi parameter di atas, lalu tekan Hitung FTE.",
+                "🧮",
+            ),
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ---------------- Hasil: tiga panel berjajar di bawah parameter ----------
+    tot = result["fte"]["Total"]
+    cost_lv = result["cost"]["Total"]
+
+    r1, r2, r3 = st.columns([1.05, 1.25, 1], gap="medium")
+
+    with r1:
+        # Qty & cost di readout sengaja TOTAL lintas role (mekanik +
+        # electrician + welder digabung) — rincian per role sudah ada di panel
+        # sebelahnya, jadi readout cukup menjawab "berapa orang dan berapa
+        # biayanya di tiap level".
+        st.markdown(
+            theme.readout_calc(
+                total_fte=num(tot["Tot"]),
+                levels=[
+                    (m, theme.LEVEL_NOTE[m], num(tot[m]), rp(cost_lv[m]))
+                    for m in MONTH_COLS
+                ],
+                grand_label="Estimasi cost per bulan",
+                grand_value=rp(cost_lv["Tot"]),
+            ),
+            unsafe_allow_html=True,
+        )
+
+    with r2:
+        with theme.card("calc_table", "Rincian per role", "FTE per level"):
+            rows, sums = [], {"M1": 0.0, "M2": 0.0, "M3": 0.0, "Tot": 0.0}
+            for role in ("Mechanic", "Electric", "Welder"):
+                v = result["fte"][role]
+                rows.append([theme.ROLE_LABEL[role], num(v["M1"]), num(v["M2"]),
+                             num(v["M3"]), num(v["Tot"])])
+                for kk in sums:
+                    sums[kk] += v.get(kk, 0)
             st.markdown(
-                theme.readout_calc(
-                    total_fte=num(tot["Tot"]),
-                    levels=[
-                        (m, theme.LEVEL_NOTE[m], num(tot[m]), rp(cost_lv[m]))
-                        for m in MONTH_COLS
-                    ],
-                    grand_label="Estimasi cost per bulan",
-                    grand_value=rp(cost_tot),
+                theme.table_html(
+                    ["Role", "M1", "M2", "M3", "Total"], rows,
+                    total_row=["TOTAL", num(sums["M1"]), num(sums["M2"]),
+                               num(sums["M3"]), num(sums["Tot"])],
+                    total_col=4,
                 ),
                 unsafe_allow_html=True,
             )
-            st.write("")
-            with theme.card("calc_donut", "Sebaran per role", accent=theme.ROLE_COLORS["Mechanic"]):
-                st.plotly_chart(charts.role_donut(result["fte"]), width="stretch",
-                                config={"displayModeBar": False})
-        else:
             st.markdown(
-                theme.empty_state(
-                    "Belum ada hasil",
-                    "Lengkapi parameter di sebelah kiri, lalu tekan Hitung FTE.",
-                    "🧮",
-                ),
+                theme.stat_list([
+                    (f"Cost {theme.ROLE_LABEL[role]}", rp(result["cost"][role]["Tot"]))
+                    for role in ("Mechanic", "Electric", "Welder")
+                ]),
                 unsafe_allow_html=True,
             )
+
+    with r3:
+        with theme.card("calc_donut", "Sebaran per role", accent=theme.ROLE_COLORS["Mechanic"]):
+            st.plotly_chart(charts.role_donut(result["fte"], height=268), width="stretch",
+                            config={"displayModeBar": False})
 
 
 # ===========================================================================
