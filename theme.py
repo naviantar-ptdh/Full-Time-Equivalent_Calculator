@@ -535,76 +535,93 @@ def inject_css():
         .dh-empty h4 {{ margin: 0 0 4px 0; font-size: 15px; font-weight: 700; }}
         .dh-empty p {{ margin: 0; font-size: 12.5px; color: {NEUTRAL['text_muted']}; }}
 
-        .dh-readout {{
-            background: {BRAND['navy']}; border-radius: 12px; padding: 16px 18px; color: #fff;
-        }}
-        .dh-readout .label {{
-            font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: #8896AC; font-weight: 700;
-        }}
-        .dh-readout .big {{
-            font-family: {FONT_DISPLAY}; font-size: 42px; font-weight: 800; line-height: 1.05;
-            color: #fff; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
-        }}
-        .dh-readout .lv {{ display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }}
-        .dh-readout .lv span {{
-            background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.14);
-            border-radius: 7px; padding: 4px 9px; font-size: 11px; color: #C3CBD9; font-weight: 600;
-        }}
-        .dh-readout .lv span b {{ color: #fff; font-weight: 800; }}
-        .dh-readout .cost {{
-            margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12);
-            font-size: 12px; color: #8896AC; font-weight: 600;
-        }}
-        .dh-readout .cost b {{ color: {BRAND['amber']}; font-weight: 800; }}
+        /* =====================================================
+           READOUT KALKULATOR — versi TERANG
+           Sebelumnya panel ini berlatar navy pekat, jadi ia berdiri sendiri
+           di antara kartu-kartu putih. Sekarang ia memakai kartu putih yang
+           sama, dan "nuansa kalkulator"-nya dibawa oleh dua hal lain:
+           (1) strip display bergaya LCD di atas, dan (2) baris rincian
+           bergaya struk. Header & baris totalnya sengaja memakai navy yang
+           persis sama dengan .dh-table supaya senada dengan tabel di
+           sebelahnya.
+           ===================================================== */
+        .dh-calcout {{ margin-top: 2px; }}
 
-        /* Rincian per level di dalam readout — gaya "struk kalkulator":
-           label kiri, qty & nominal rata kanan, garis putus tipis antar baris,
-           lalu garis tebal sebelum baris total. Blok ini juga yang menyamakan
-           tinggi kolom kanan dengan kolom kiri di mode Kalkulator. */
-        .dh-readout .brk {{
-            margin-top: 14px; padding-top: 4px;
-            border-top: 1px solid rgba(255,255,255,.12);
+        /* strip display ala layar kalkulator */
+        .dh-calcout .disp {{
+            background: {tint(BRAND['orange'], .93)};
+            border: 1px solid {tint(BRAND['orange'], .80)};
+            border-radius: 10px;
+            padding: 12px 15px 13px 15px;
+            margin-bottom: 12px;
+            position: relative; overflow: hidden;
         }}
-        .dh-readout .brk .hd {{
+        /* garis-garis tipis diagonal, meniru tekstur layar segmen */
+        .dh-calcout .disp::after {{
+            content: ""; position: absolute; inset: 0;
+            background: repeating-linear-gradient(
+                135deg, rgba(255,255,255,0) 0 7px, rgba(255,255,255,.5) 7px 8px);
+            pointer-events: none;
+        }}
+        .dh-calcout .disp .label {{
+            font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+            color: {BRAND['orange_deep']}; font-weight: 800; opacity: .8;
+        }}
+        .dh-calcout .disp .big {{
+            font-family: {FONT_DISPLAY}; font-size: 44px; font-weight: 800;
+            line-height: 1.02; color: {BRAND['orange_deep']};
+            letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+        }}
+        .dh-calcout .disp .unit {{
+            font-size: 13px; font-weight: 700; color: {NEUTRAL['text_muted']}; margin-left: 6px;
+        }}
+
+        /* header kolom — navy, sama persis dengan .dh-table th */
+        .dh-calcout .hd {{
             display: flex; align-items: center; gap: 10px;
-            padding: 8px 0 6px 0;
-            font-size: 9px; letter-spacing: .11em; text-transform: uppercase;
-            color: #6F7C92; font-weight: 800;
+            background: {BRAND['navy']}; border-radius: 6px 6px 0 0;
+            padding: 7px 10px;
+            font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase;
+            color: #fff; font-weight: 700;
         }}
-        .dh-readout .brk .row {{
+        .dh-calcout .row {{
             display: flex; align-items: center; gap: 10px;
-            padding: 8px 0;
-            border-top: 1px dashed rgba(255,255,255,.10);
+            padding: 8px 10px;
+            border-bottom: 1px solid {NEUTRAL['border_soft']};
         }}
-        .dh-readout .brk .sw {{
-            width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto;
+        .dh-calcout .row:nth-child(odd) {{ background: {NEUTRAL['wash']}; }}
+        .dh-calcout .sw {{ width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }}
+        .dh-calcout .nm {{
+            flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 600;
+            color: {NEUTRAL['text']}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }}
-        .dh-readout .brk .nm {{
-            flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: #C3CBD9; font-weight: 600;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        .dh-calcout .nm i {{ font-style: normal; color: {NEUTRAL['text_soft']}; font-weight: 500; }}
+        .dh-calcout .qty {{
+            flex: 0 0 auto; min-width: 46px; text-align: right;
+            font-size: 12.5px; font-weight: 800; color: {NEUTRAL['text']};
+            font-variant-numeric: tabular-nums;
         }}
-        .dh-readout .brk .nm i {{ font-style: normal; color: #7C8AA0; font-weight: 500; }}
-        .dh-readout .brk .qty {{
-            flex: 0 0 auto; min-width: 52px; text-align: right;
-            font-size: 12.5px; color: #fff; font-weight: 800; font-variant-numeric: tabular-nums;
+        .dh-calcout .qty small {{
+            font-size: 9.5px; color: {NEUTRAL['text_soft']}; font-weight: 600; margin-left: 3px;
         }}
-        .dh-readout .brk .qty small {{ font-size: 9.5px; color: #7C8AA0; font-weight: 600; margin-left: 3px; }}
-        .dh-readout .brk .amt {{
-            flex: 0 0 auto; min-width: 108px; text-align: right;
-            font-size: 12px; color: #E8ECF3; font-weight: 700; font-variant-numeric: tabular-nums;
+        .dh-calcout .amt {{
+            flex: 0 0 auto; min-width: 104px; text-align: right;
+            font-size: 12px; font-weight: 700; color: {NEUTRAL['text']};
+            font-variant-numeric: tabular-nums;
         }}
-        .dh-readout .grand {{
-            display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-            margin-top: 12px; padding-top: 12px;
-            border-top: 2px solid rgba(255,255,255,.24);
+        /* baris total — navy + nominal amber, sama dengan .dh-table tr.tr-total */
+        .dh-calcout .grand {{
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            background: {BRAND['navy']}; border-radius: 0 0 6px 6px;
+            padding: 11px 12px;
         }}
-        .dh-readout .grand .k {{
-            font-size: 9.5px; letter-spacing: .11em; text-transform: uppercase;
-            color: #8896AC; font-weight: 800;
+        .dh-calcout .grand .k {{
+            font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
+            color: #A9B4C6; font-weight: 800; line-height: 1.3;
         }}
-        .dh-readout .grand .v {{
-            font-family: {FONT_DISPLAY}; font-size: 20px; font-weight: 800;
-            color: {BRAND['amber']}; letter-spacing: -.01em; font-variant-numeric: tabular-nums;
+        .dh-calcout .grand .v {{
+            font-family: {FONT_DISPLAY}; font-size: 17px; font-weight: 800;
+            color: {BRAND['amber']}; font-variant-numeric: tabular-nums; white-space: nowrap;
         }}
 
         /* Catatan inline (mis. jarak area kerja). Sengaja TIDAK memakai
@@ -636,7 +653,7 @@ def inject_css():
         .dh-stats {{ margin-top: 10px; }}
         .dh-stats .row {{
             display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-            padding: 8px 2px; border-top: 1px dashed {NEUTRAL['border']};
+            padding: 10px 2px; border-top: 1px dashed {NEUTRAL['border']};
         }}
         .dh-stats .row:first-child {{ border-top: none; }}
         .dh-stats .k {{ font-size: 11.5px; color: {NEUTRAL['text_muted']}; font-weight: 600; }}
@@ -763,14 +780,13 @@ def stat_list(items: list[tuple[str, str]]) -> str:
     return f'<div class="dh-stats">{rows}</div>'
 
 
-def readout_calc(total_fte: str, levels: list[tuple[str, str, str, str]],
+def calc_readout(total_fte: str, levels: list[tuple[str, str, str, str]],
                  grand_label: str, grand_value: str) -> str:
-    """Readout mode Kalkulator: angka besar + rincian per level + total cost.
+    """Readout mode Kalkulator, versi terang (dipakai di dalam theme.card).
 
     `levels` = [(kode, keterangan, qty, nominal), ...] mis.
-    [("M1", "Senior", "2", "Rp 12.000.000"), ...]. Nilainya total lintas role,
-    tidak dipecah per role — cukup untuk pembacaan cepat, rincian per role
-    tetap ada di tabel kolom kiri.
+    [("M1", "Senior", "2", "Rp 20.000.000"), ...]. Qty & nominalnya total
+    lintas role — rincian per role ada di panel tabel sebelahnya.
     """
     rows = "".join(
         f'<div class="row">'
@@ -782,13 +798,12 @@ def readout_calc(total_fte: str, levels: list[tuple[str, str, str, str]],
         for code, note, qty, amount in levels
     )
     return (
-        '<div class="dh-readout">'
-        '<div class="label">Total FTE</div>'
-        f'<div class="big">{total_fte}</div>'
-        '<div class="brk">'
+        '<div class="dh-calcout">'
+        '<div class="disp"><div class="label">Total FTE</div>'
+        f'<div class="big">{total_fte}<span class="unit">orang</span></div></div>'
         '<div class="hd"><span class="nm">Level</span>'
         '<span class="qty">Qty</span><span class="amt">Cost / bulan</span></div>'
-        f"{rows}</div>"
+        f"{rows}"
         f'<div class="grand"><span class="k">{grand_label}</span>'
         f'<span class="v">{grand_value}</span></div>'
         "</div>"
