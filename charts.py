@@ -307,105 +307,94 @@ def level_stack_by_section(
 
 
 # ---------------------------------------------------------------------------
-# 4) Cost — speedometer (skala relatif antar-site)
+# 4) Cost — busur komposisi (skala relatif antar-site)
 # ---------------------------------------------------------------------------
 def cost_gauge(
-    value: float,
+    cost_breakdown: dict,
     scale_max: float,
     avg: float | None = None,
     top_site: str | None = None,
-    height: int = 196,
+    height: int = 208,
 ) -> go.Figure:
-    """Speedometer cost/bulan dengan skala 0 → site termahal.
+    """Busur setengah-donut: posisi DAN komposisi cost dalam satu bentuk.
 
-    Catatan teknis: `go.Indicator` memang tidak mendukung hover — itu batas
-    Plotly, bukan pilihan desain. Karena itu angkanya ditulis besar di tengah
-    gauge dan rinciannya disediakan sebagai tabel + batang komposisi
-    (`cost_composition_bar`) yang bisa di-hover, bukan disembunyikan di
-    dalam tooltip.
+    v6 memakai `go.Indicator` (speedometer klasik) untuk chart ini. Dua
+    masalah muncul dari situ: (1) `go.Indicator` memang tidak mendukung
+    hover sama sekali — itu batas Plotly, bukan pilihan desain — jadi tidak
+    ada cara memberi tooltip di atasnya; (2) warna "steps"-nya cuma gradasi
+    oranye generik, tidak menjelaskan apa-apa selain posisi jarum.
+
+    Sekarang busurnya dibangun dari `go.Pie` (bukan Indicator), diputar dan
+    disembunyikan separuh, supaya betul-betul bisa di-hover. Panjang busur
+    berwarna = total cost site ini, dipecah per role (Mekanik/Electrician/
+    Welder — warna sama seperti dipakai di seluruh dashboard); sisa busur
+    abu-abu muda = jarak menuju site termahal. Jadi posisi batas
+    warna-ke-abu ITU SENDIRI adalah "jarum"-nya — tidak perlu elemen
+    terpisah, dan setiap segmen berwarna bisa di-hover untuk lihat rincian
+    role-nya.
     """
-    scale_max = max(scale_max, value, 1.0)
+    mech = cost_breakdown.get("Mechanic", {}).get("Tot", 0.0)
+    elec = cost_breakdown.get("Electric", {}).get("Tot", 0.0)
+    weld = cost_breakdown.get("Welder", {}).get("Tot", 0.0)
+    total = mech + elec + weld
+    scale_max = max(scale_max, total, 1.0)
+    remainder = max(scale_max - total, 0.0)
 
-    steps = [
-        dict(range=[0, scale_max * 0.5], color="#FFF3E8"),
-        dict(range=[scale_max * 0.5, scale_max * 0.8], color="#FFE0C4"),
-        dict(range=[scale_max * 0.8, scale_max], color="#FFCBA1"),
+    def seg_hover(role_label, v):
+        return f"<b>{role_label}</b><br>{rp(v)} · {num(v / total * 100, 1)}% dari cost site ini" if total > 0 else ""
+
+    # Separuh atas = data asli (mech, elec, weld, sisa). Separuh bawah =
+    # satu slice bayangan sebesar total separuh atas (transparan), supaya
+    # lingkaran penuh Plotly TAMPAK seperti busur setengah lingkaran saja.
+    half_total = scale_max
+    labels = ["Mekanik", "Electrician", "Welder", "Sisa kapasitas", ""]
+    values = [mech, elec, weld, remainder, half_total]
+    colors = [
+        ROLE_COLORS["Mechanic"], ROLE_COLORS["Electric"], ROLE_COLORS["Welder"],
+        NEUTRAL["border_soft"], "rgba(0,0,0,0)",
+    ]
+    hovertext = [
+        seg_hover("Mekanik", mech), seg_hover("Electrician", elec), seg_hover("Welder", weld),
+        f"<b>Sisa kapasitas</b><br>{rp(remainder)} menuju site termahal" if remainder > 0 else "",
+        "",
     ]
 
-    gauge = dict(
-        axis=dict(
-            range=[0, scale_max],
-            tickmode="array",
-            tickvals=[0, scale_max * 0.5, scale_max],
-            ticktext=["0", rp_short(scale_max * 0.5), rp_short(scale_max)],
-            tickfont=dict(family="Public Sans", size=9.5, color=NEUTRAL["text_soft"]),
-            tickwidth=0, ticklen=3, ticks="outside",
-        ),
-        bar=dict(color=BRAND["orange"], thickness=0.30, line=dict(width=0)),
-        bgcolor="rgba(0,0,0,0)",
-        borderwidth=0,
-        steps=steps,
-    )
-    if avg is not None and avg > 0:
-        gauge["threshold"] = dict(
-            line=dict(color=BRAND["navy"], width=3), thickness=0.82, value=min(avg, scale_max)
+    fig = go.Figure(
+        go.Pie(
+            labels=labels, values=values, hole=0.68,
+            rotation=270, direction="clockwise", sort=False,
+            marker=dict(colors=colors, line=dict(color="#fff", width=2)),
+            textinfo="none",
+            hovertext=hovertext,
+            hovertemplate="%{hovertext}<extra></extra>",
         )
+    )
 
-    fig = go.Figure(go.Indicator(mode="gauge", value=value, gauge=gauge, domain=dict(x=[0, 1], y=[0.22, 1])))
-
-    pct = value / scale_max * 100
+    pct = total / scale_max * 100 if scale_max else 0
     fig.add_annotation(
         text=(
-            f"<span style='font-family:Archivo;font-size:27px;font-weight:800;color:{NEUTRAL['text']}'>{rp_short(value)}</span>"
+            f"<span style='font-family:Archivo;font-size:26px;font-weight:800;color:{NEUTRAL['text']}'>{rp_short(total)}</span>"
             f"<br><span style='font-size:10px;color:{NEUTRAL['text_muted']}'>per bulan · {num(pct, 0)}% dari site termahal</span>"
         ),
-        showarrow=False, xref="paper", yref="paper", x=0.5, y=0.10, align="center",
+        showarrow=False, xref="paper", yref="paper", x=0.5, y=0.48, align="center",
     )
-    fig.update_layout(**_layout(height, margin=dict(l=16, r=16, t=6, b=6)))
+    fig.update_layout(
+        **_layout(
+            height,
+            margin=dict(l=10, r=10, t=6, b=0),
+            showlegend=False,
+        )
+    )
     return fig
 
 
 def cost_gauge_caption(scale_max: float, avg: float, top_site: str | None) -> str:
-    """Keterangan skala gauge — wajib ada, karena skalanya relatif."""
+    """Keterangan busur — wajib ada, karena skalanya relatif."""
     site = f" (<b>{top_site}</b>)" if top_site else ""
     return (
-        f'<div class="dh-note">Skala 0 – {rp_short(scale_max)}, yaitu cost site tertinggi{site}. '
-        f'Garis gelap = rata-rata antar-site ({rp_short(avg)}).</div>'
+        f'<div class="dh-note">Warna = komposisi cost per role di site ini. Abu-abu = jarak menuju '
+        f'{rp_short(scale_max)}, yaitu cost site tertinggi{site}. Rata-rata antar-site: {rp_short(avg)}.</div>'
     )
-
-
-def cost_composition_bar(cost_breakdown: dict, height: int = 42) -> go.Figure:
-    """Batang komposisi cost per role — bisa di-hover, melengkapi gauge."""
-    total = cost_breakdown.get("Total", {}).get("Tot", 0.0)
-    if total <= 0:
-        return _empty(height, "")
-
-    fig = go.Figure()
-    for role in ("Mechanic", "Electric", "Welder"):
-        seg = cost_breakdown.get(role, {}).get("Tot", 0.0)
-        if seg <= 0:
-            continue
-        fig.add_trace(
-            go.Bar(
-                x=[seg], y=["cost"], orientation="h",
-                marker=dict(color=ROLE_COLORS[role], line=dict(width=0)),
-                hovertext=[
-                    f"<b>{ROLE_LABEL[role]}</b><br>{rp(seg)}<br>{num(seg / total * 100, 1)}% dari total cost"
-                ],
-                hovertemplate="%{hovertext}<extra></extra>",
-            )
-        )
-    fig.update_layout(
-        **_layout(
-            height,
-            barmode="stack",
-            margin=dict(l=0, r=0, t=2, b=2),
-            xaxis=dict(visible=False, range=[0, total], fixedrange=True),
-            yaxis=dict(visible=False, fixedrange=True),
-            bargap=0.05,
-        )
-    )
-    return fig
 
 
 # ---------------------------------------------------------------------------
