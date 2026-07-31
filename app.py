@@ -454,27 +454,35 @@ def render_calculator_mode(backend):
     tot = result["fte"]["Total"]
     cost_lv = result["cost"]["Total"]
 
-    r1, r2, r3 = st.columns([1.05, 1.25, 1], gap="medium")
+    r1, r2, r3 = st.columns([1, 1.12, 1.24], gap="medium")
 
     with r1:
+        with theme.card("calc_donut", "Sebaran per role", "share tiap role",
+                        accent=theme.ROLE_COLORS["Mechanic"]):
+            st.plotly_chart(charts.role_donut(result["fte"], height=281), width="stretch",
+                            config={"displayModeBar": False})
+
+    with r2:
         # Qty & cost di readout sengaja TOTAL lintas role (mekanik +
         # electrician + welder digabung) — rincian per role sudah ada di panel
         # sebelahnya, jadi readout cukup menjawab "berapa orang dan berapa
         # biayanya di tiap level".
-        st.markdown(
-            theme.readout_calc(
-                total_fte=num(tot["Tot"]),
-                levels=[
-                    (m, theme.LEVEL_NOTE[m], num(tot[m]), rp(cost_lv[m]))
-                    for m in MONTH_COLS
-                ],
-                grand_label="Estimasi cost per bulan",
-                grand_value=rp(cost_lv["Tot"]),
-            ),
-            unsafe_allow_html=True,
-        )
+        with theme.card("calc_out", "Hasil kalkulator", "total lintas role",
+                        accent=theme.BRAND["orange_deep"]):
+            st.markdown(
+                theme.calc_readout(
+                    total_fte=num(tot["Tot"]),
+                    levels=[
+                        (m, theme.LEVEL_NOTE[m], num(tot[m]), rp(cost_lv[m]))
+                        for m in MONTH_COLS
+                    ],
+                    grand_label="Estimasi cost<br/>per bulan",
+                    grand_value=rp(cost_lv["Tot"]),
+                ),
+                unsafe_allow_html=True,
+            )
 
-    with r2:
+    with r3:
         with theme.card("calc_table", "Rincian per role", "FTE per level"):
             rows, sums = [], {"M1": 0.0, "M2": 0.0, "M3": 0.0, "Tot": 0.0}
             for role in ("Mechanic", "Electric", "Welder"):
@@ -499,11 +507,6 @@ def render_calculator_mode(backend):
                 ]),
                 unsafe_allow_html=True,
             )
-
-    with r3:
-        with theme.card("calc_donut", "Sebaran per role", accent=theme.ROLE_COLORS["Mechanic"]):
-            st.plotly_chart(charts.role_donut(result["fte"], height=268), width="stretch",
-                            config={"displayModeBar": False})
 
 
 # ===========================================================================
