@@ -50,7 +50,8 @@ IMAGES_DIR = ASSETS_DIR / "images"
 BRAND = {
     "orange": "#FF6805",     # primary swatch PTDH
     "orange_deep": "#D94E00",
-    "amber": "#FFA71A",      # ujung kanan gradasi header (seperti band Looker)
+    "header_l": "#FF8A0D",   # ujung kiri gradasi header — dari sampel referensi
+    "amber": "#FFC21A",      # ujung kanan gradasi header — dari sampel referensi
     "navy": "#101B2D",       # strip legenda & readout gelap
 }
 
@@ -247,7 +248,7 @@ def inject_css():
            HEADER BAND (orange gradient, logo putih) — signature
            ===================================================== */
         .dh-band {{
-            background: linear-gradient(100deg, {BRAND['orange_deep']} 0%, {BRAND['orange']} 42%, {BRAND['amber']} 100%);
+            background: linear-gradient(100deg, {BRAND['header_l']} 0%, {BRAND['orange']} 38%, {BRAND['amber']} 100%);
             border-radius: 14px;
             padding: 14px 20px;
             display: flex; align-items: center; gap: 18px;
@@ -299,7 +300,7 @@ def inject_css():
             padding: 11px 13px;
             display: flex; align-items: center; gap: 11px;
             box-shadow: 0 1px 2px rgba(17,24,39,.05);
-            min-height: 88px; overflow: hidden;
+            min-height: 88px;
         }}
         .kpi .ico {{
             width: 42px; height: 42px; border-radius: 50%;
@@ -322,7 +323,7 @@ def inject_css():
         .kpi .value small {{ font-size: 13px; font-weight: 700; color: {NEUTRAL['text_muted']}; }}
         .kpi .sub {{
             font-size: 10.5px; color: {NEUTRAL['text_muted']}; margin-top: 2px;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            white-space: normal; line-height: 1.35; overflow-wrap: break-word;
         }}
         .kpi .sub b {{ color: {NEUTRAL['text']}; font-weight: 700; }}
 
@@ -330,12 +331,25 @@ def inject_css():
            CARD — dibangun dari st.container(key="card_*") supaya
            isinya benar-benar terbungkus (lihat docstring file)
            ===================================================== */
+        /* Streamlit meregangkan kartu di dalam st.columns supaya setinggi
+           kolom TERTINGGI dalam baris (default flex align-items:stretch di
+           stHorizontalBlock). Itu penyebab ruang kosong besar di bawah kartu
+           yang isinya lebih pendek dari kartu sebelahnya — dikeluhkan di
+           mode Kalkulator (kartu Parameter) dan mode Basecase (kartu
+           Persebaran M1-M3). Kartu dipaksa mengikuti tinggi isinya sendiri. */
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
+            align-items: flex-start !important;
+        }}
         div[class*="st-key-card_"] {{
             background: {NEUTRAL['card']};
             border: 1px solid {NEUTRAL['border']};
             border-radius: 12px;
             padding: 12px 14px 8px 14px;
             box-shadow: 0 1px 2px rgba(17,24,39,.05);
+            height: auto !important;
+            flex-grow: 0 !important;
+            align-self: flex-start !important;
+            width: 100%;
         }}
         div[class*="st-key-card_"] {{ gap: 0.35rem !important; }}
         div[class*="st-key-card_"] div[data-testid="stVerticalBlock"] {{ gap: 0.35rem !important; }}
@@ -466,13 +480,23 @@ def inject_css():
         }}
         .dh-table td:first-child {{ text-align: left; font-weight: 600; }}
         .dh-table tbody tr:nth-child(even) td {{ background: {NEUTRAL['wash']}; }}
-        .dh-table td.tc, .dh-table th.tc {{ font-weight: 800; background: {tint(BRAND['orange'], .93)}; }}
+        /* Kolom TOTAL: latarnya tint oranye TERANG, jadi teksnya HARUS gelap.
+           Sebelumnya th.tc mewarisi color:#fff dari aturan `th` di atas —
+           putih di atas tint terang jadi nyaris tak kelihatan. */
+        .dh-table td.tc, .dh-table th.tc {{
+            font-weight: 800; background: {tint(BRAND['orange'], .93)};
+            color: {BRAND['orange_deep']} !important;
+        }}
         .dh-table tbody tr:nth-child(even) td.tc {{ background: {tint(BRAND['orange'], .89)}; }}
         .dh-table tr.tr-total td {{
             font-weight: 800; background: {BRAND['navy']} !important; color: #fff; border-bottom: none;
         }}
         .dh-table tr.tr-total td:first-child {{ border-radius: 0 0 0 6px; }}
-        .dh-table tr.tr-total td.tc {{ background: {BRAND['orange']} !important; }}
+        /* Sel TOTAL di baris TOTAL: latar oranye solid, putih di atasnya
+           kontrasnya rendah — dipakai teks navy gelap supaya tetap terbaca. */
+        .dh-table tr.tr-total td.tc {{
+            background: {BRAND['amber']} !important; color: {BRAND['navy']} !important;
+        }}
         .dh-table tr.tr-total td:last-child {{ border-radius: 0 0 6px 0; }}
 
         div[data-testid="stDataFrame"] {{
