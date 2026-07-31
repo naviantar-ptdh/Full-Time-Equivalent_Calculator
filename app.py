@@ -157,9 +157,9 @@ ROLE_LEGEND = [
     ("Welder", theme.ROLE_COLORS["Welder"]),
 ]
 LEVEL_LEGEND = [
-    ("M1 · Senior", theme.LEVEL_SHADES["M1"]),
-    ("M2 · Madya", theme.LEVEL_SHADES["M2"]),
-    ("M3 · Junior", theme.LEVEL_SHADES["M3"]),
+    ("M1", theme.LEVEL_SHADES["M1"]),
+    ("M2", theme.LEVEL_SHADES["M2"]),
+    ("M3", theme.LEVEL_SHADES["M3"]),
 ]
 
 
