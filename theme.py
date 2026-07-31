@@ -560,7 +560,7 @@ def inject_css():
 # Komponen
 # ---------------------------------------------------------------------------
 def header_band(title: str, subtitle: str = "", chips: list[str] | None = None) -> str:
-    logo = image_uri("logo_putih.png")
+    logo = image_uri("logo_putih (2).png")
     logo_html = f'<img class="logo" src="{logo}" alt="PT Dharma Henwa"/><div class="rule"></div>' if logo else ""
     chips_html = "".join(f'<div class="chip">{c}</div>' for c in (chips or []))
     return (
