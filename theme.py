@@ -649,6 +649,31 @@ def inject_css():
         /* jarak aman antara catatan dan tombol Hitung FTE */
         div[class*="st-key-calc_go"] {{ margin-top: 12px !important; }}
 
+        /* Legend donut dengan persentase — menggantikan legend bawaan Plotly
+           supaya angka share-nya ikut terbaca dan gaya barisnya sama dengan
+           komponen lain di kartu. */
+        .dh-plegend {{ margin-top: 4px; }}
+        .dh-plegend .row {{
+            display: flex; align-items: center; gap: 9px;
+            padding: 8px 2px; border-top: 1px dashed {NEUTRAL['border']};
+        }}
+        .dh-plegend .row:first-child {{ border-top: none; }}
+        .dh-plegend .sw {{ width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }}
+        .dh-plegend .nm {{
+            flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 600;
+            color: {NEUTRAL['text']}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }}
+        .dh-plegend .ft {{
+            flex: 0 0 auto; min-width: 54px; text-align: right;
+            font-size: 11.5px; font-weight: 600; color: {NEUTRAL['text_muted']};
+            font-variant-numeric: tabular-nums;
+        }}
+        .dh-plegend .pc {{
+            flex: 0 0 auto; min-width: 52px; text-align: right;
+            font-size: 12.5px; font-weight: 800; color: {NEUTRAL['text']};
+            font-variant-numeric: tabular-nums;
+        }}
+
         /* daftar statistik ringkas di kartu (dipakai di bawah gauge cost) */
         .dh-stats {{ margin-top: 10px; }}
         .dh-stats .row {{
@@ -769,6 +794,17 @@ def empty_state(title: str, body: str, emoji: str = "📊") -> str:
 def inline_note(html: str, warn: bool = False) -> str:
     cls = "dh-inline-note warn" if warn else "dh-inline-note"
     return f'<div class="{cls}">{html}</div>'
+
+
+def donut_legend(items: list[tuple[str, str, str, str]]) -> str:
+    """Legend donut: [(warna, label, "8 FTE", "100,0%"), ...]."""
+    rows = "".join(
+        f'<div class="row"><span class="sw" style="background:{color}"></span>'
+        f'<span class="nm">{label}</span>'
+        f'<span class="ft">{fte}</span><span class="pc">{pct}</span></div>'
+        for color, label, fte, pct in items
+    )
+    return f'<div class="dh-plegend">{rows}</div>'
 
 
 def stat_list(items: list[tuple[str, str]]) -> str:
