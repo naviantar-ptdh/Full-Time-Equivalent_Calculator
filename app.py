@@ -391,12 +391,21 @@ def render_calculator_mode(backend):
 
             jarak_km = backend.jarak.get(site) if site else None
             if site and jarak_km is None:
-                st.warning(
-                    f"Jarak untuk site {site} belum ada di BACKEND seksi 'Jarak'. "
-                    f"Perhitungan tidak bisa dijalankan sampai data itu diisi."
+                st.markdown(
+                    theme.inline_note(
+                        f"Jarak untuk site <b>{site}</b> belum tersedia. "
+                        f"Perhitungan tidak bisa dijalankan sampai data itu diisi.",
+                        warn=True,
+                    ),
+                    unsafe_allow_html=True,
                 )
             elif jarak_km is not None:
-                st.caption(f"Jarak area kerja site {site}: **{num(jarak_km, 2)} km** (otomatis dari BACKEND).")
+                st.markdown(
+                    theme.inline_note(
+                        f"Jarak area kerja site {site}: <b>{num(jarak_km, 2)} km</b>"
+                    ),
+                    unsafe_allow_html=True,
+                )
 
             with st.container(key="calc_go"):
                 compute_clicked = st.button(
@@ -450,24 +459,26 @@ def render_calculator_mode(backend):
                     ),
                     unsafe_allow_html=True,
                 )
-                with st.expander("Nilai intermediate (H / I / J, load factor, RACI)"):
-                    st.json(result.get("intermediate", {}))
 
     with right:
         if result:
             tot = result["fte"]["Total"]
-            cost_tot = result["cost"]["Total"]["Tot"]
+            cost_lv = result["cost"]["Total"]
+            cost_tot = cost_lv["Tot"]
+            # Qty & cost di sini sengaja TOTAL lintas role (mekanik +
+            # electrician + welder digabung) — rincian per role sudah ada di
+            # tabel kolom kiri, jadi readout cukup menjawab "berapa orang dan
+            # berapa biayanya di tiap level".
             st.markdown(
-                '<div class="dh-readout">'
-                '<div class="label">Total FTE</div>'
-                f'<div class="big">{num(tot["Tot"])}</div>'
-                '<div class="lv">'
-                f'<span>M1 <b>{num(tot["M1"])}</b></span>'
-                f'<span>M2 <b>{num(tot["M2"])}</b></span>'
-                f'<span>M3 <b>{num(tot["M3"])}</b></span>'
-                '</div>'
-                f'<div class="cost">Estimasi cost per bulan <b>{rp(cost_tot)}</b></div>'
-                '</div>',
+                theme.readout_calc(
+                    total_fte=num(tot["Tot"]),
+                    levels=[
+                        (m, theme.LEVEL_NOTE[m], num(tot[m]), rp(cost_lv[m]))
+                        for m in MONTH_COLS
+                    ],
+                    grand_label="Estimasi cost per bulan",
+                    grand_value=rp(cost_tot),
+                ),
                 unsafe_allow_html=True,
             )
             st.write("")
@@ -503,16 +514,6 @@ def render_basecase_sidebar(backend):
         with st.container(key="sb_compute"):
             compute = st.button("Hitung FTE", width="stretch",
                                 disabled=site is None, key="sb_compute_btn")
-
-    with st.sidebar.expander("Data BACKEND yang terbaca"):
-        st.write("**Proporsi RACI**", backend.raci)
-        st.write("**Split mekanik [M1,M2,M3]**", backend.split_mechanic)
-        st.write("**Split welder [M1,M2]**", backend.split_welder)
-        st.write("**Split electrician [M1,M2]**", backend.split_electrician)
-        st.write("**Ratio shift per site**", backend.ratio_shift)
-        st.write("**Lost time per site**", backend.lost_time)
-        st.write("**Jarak per site (km)**", backend.jarak)
-        st.write("**Urutan kategori**", backend.classification_order)
 
     return site, cf, refresh, compute
 
@@ -696,6 +697,12 @@ def render_basecase_mode(backend):
 
     # ---------------- baris 2: persebaran level + cost ----------------
     r2a, r2b = st.columns([1.6, 1], gap="small")
+    scale = site_cost_scale(backend, units_all, cf)
+    values = list(scale.values()) or [cost_total]
+    scale_max = max(values)
+    avg = sum(values) / len(values)
+    top_site = max(scale, key=scale.get) if scale else None
+
     with r2a:
         with theme.card("level_stack", "Persebaran M1 – M3 per Section",
                         "batang bertumpuk, tinggi total = FTE section",
@@ -705,18 +712,11 @@ def render_basecase_mode(backend):
                 width="stretch", config={"displayModeBar": False},
             )
             st.markdown(theme.legend_html(LEVEL_LEGEND), unsafe_allow_html=True)
-    with r2b:
-        scale = site_cost_scale(backend, units_all, cf)
-        values = list(scale.values()) or [cost_total]
-        scale_max = max(values)
-        avg = sum(values) / len(values)
-        top_site = max(scale, key=scale.get) if scale else None
-
-        with theme.card("cost_gauge", "Estimasi Cost per Bulan",
-                        "arahkan mouse ke busur untuk rincian role", accent=theme.BRAND["orange_deep"]):
-            st.plotly_chart(charts.cost_gauge(cost, scale_max, avg, top_site),
-                            width="stretch", config={"displayModeBar": False})
-            st.markdown(charts.cost_gauge_caption(scale_max, avg, top_site), unsafe_allow_html=True)
+            # Tabel FTE + cost per role dipindah ke kolom KIRI, menempel di
+            # bawah chart. Sebelumnya tabel ini ada di kartu gauge dan menimpa
+            # keterangan skala busur; di sini ia juga membuat tinggi kedua
+            # kolom jauh lebih seimbang.
+            st.write("")
             rows = [
                 [theme.ROLE_LABEL[r],
                  num({"Mechanic": mech_total, "Electric": elec_total, "Welder": weld_total}[r]["Tot"]),
@@ -728,6 +728,20 @@ def render_basecase_mode(backend):
                     ["Role", "FTE", "Cost / bulan"], rows,
                     total_row=["TOTAL", num(grand_total), rp_short(cost_total)], total_col=2,
                 ),
+                unsafe_allow_html=True,
+            )
+    with r2b:
+        with theme.card("cost_gauge", "Estimasi Cost per Bulan",
+                        "arahkan mouse ke busur untuk rincian role", accent=theme.BRAND["orange_deep"]):
+            st.plotly_chart(charts.cost_gauge(cost, scale_max, avg, top_site, height=300),
+                            width="stretch", config={"displayModeBar": False})
+            st.markdown(charts.cost_gauge_caption(scale_max, avg, top_site), unsafe_allow_html=True)
+            st.markdown(
+                theme.stat_list([
+                    ("Cost per MPP", rp_short(cost_total / grand_total if grand_total else 0)),
+                    ("Rata-rata antar-site", rp_short(avg)),
+                    ("Site termahal", f"{top_site} · {rp_short(scale_max)}" if top_site else "–"),
+                ]),
                 unsafe_allow_html=True,
             )
 
