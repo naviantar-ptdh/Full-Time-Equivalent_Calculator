@@ -459,8 +459,22 @@ def render_calculator_mode(backend):
     with r1:
         with theme.card("calc_donut", "Sebaran per role", "share tiap role",
                         accent=theme.ROLE_COLORS["Mechanic"]):
-            st.plotly_chart(charts.role_donut(result["fte"], height=281), width="stretch",
-                            config={"displayModeBar": False})
+            st.plotly_chart(
+                charts.role_donut(result["fte"], height=177, show_legend=False),
+                width="stretch", config={"displayModeBar": False},
+            )
+            # Legend bawaan Plotly hanya menampilkan nama role. Diganti legend
+            # sendiri supaya FTE dan persentase share-nya ikut terbaca.
+            grand = sum(result["fte"][r]["Tot"] for r in ("Mechanic", "Electric", "Welder")) or 1
+            st.markdown(
+                theme.donut_legend([
+                    (theme.ROLE_COLORS[r], theme.ROLE_LABEL[r],
+                     f"{num(result['fte'][r]['Tot'])} FTE",
+                     f"{num(result['fte'][r]['Tot'] / grand * 100, 1)}%")
+                    for r in ("Mechanic", "Electric", "Welder")
+                ]),
+                unsafe_allow_html=True,
+            )
 
     with r2:
         # Qty & cost di readout sengaja TOTAL lintas role (mekanik +
