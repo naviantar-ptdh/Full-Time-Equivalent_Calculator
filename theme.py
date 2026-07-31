@@ -247,16 +247,32 @@ def inject_css():
         /* =====================================================
            HEADER BAND (orange gradient, logo putih) — signature
            ===================================================== */
+        /* Gradasi v6.1: ramp VERTIKAL monoton amber -> orange -> orange pekat.
+           Versi sebelumnya (#FF8A0D 0% -> #FF6805 45% -> #FFC21A 100%) naik-turun
+           lightness-nya, jadi terlihat ada "pita" tegas di tengah band. Sekarang
+           enam stop dengan jarak rapat di area transisi supaya perpindahan
+           warnanya halus, ditambah highlight radial tipis di kiri-atas seperti
+           header referensi. */
         .dh-band {{
-            background: linear-gradient(to top, {BRAND['header_l']} 0%, {BRAND['orange']} 45%, {BRAND['amber']} 100%);
+            background:
+                radial-gradient(120% 150% at 12% 0%, rgba(255,255,255,.22) 0%, rgba(255,255,255,0) 55%),
+                linear-gradient(180deg,
+                    {BRAND['amber']} 0%,
+                    #FFB015 16%,
+                    #FF9D10 32%,
+                    #FF8A0D 48%,
+                    #FF7908 66%,
+                    {BRAND['orange']} 84%,
+                    #F25F02 100%);
             border-radius: 14px;
-            padding: 14px 20px;
+            padding: 20px 22px;
+            min-height: 84px;
             display: flex; align-items: center; gap: 18px;
             margin-bottom: 14px;
             box-shadow: 0 6px 18px -8px rgba(217,78,0,.55);
         }}
-        .dh-band .logo {{ height: 40px; width: auto; flex: 0 0 auto; }}
-        .dh-band .rule {{ width: 1px; height: 34px; background: rgba(255,255,255,.45); }}
+        .dh-band .logo {{ height: 46px; width: auto; flex: 0 0 auto; }}
+        .dh-band .rule {{ width: 1px; height: 40px; background: rgba(255,255,255,.45); }}
         .dh-band .heading {{ flex: 1 1 auto; min-width: 0; }}
         .dh-band .heading .title {{
             font-family: {FONT_DISPLAY}; font-weight: 800; font-size: 21px;
@@ -541,6 +557,94 @@ def inject_css():
         }}
         .dh-readout .cost b {{ color: {BRAND['amber']}; font-weight: 800; }}
 
+        /* Rincian per level di dalam readout — gaya "struk kalkulator":
+           label kiri, qty & nominal rata kanan, garis putus tipis antar baris,
+           lalu garis tebal sebelum baris total. Blok ini juga yang menyamakan
+           tinggi kolom kanan dengan kolom kiri di mode Kalkulator. */
+        .dh-readout .brk {{
+            margin-top: 14px; padding-top: 4px;
+            border-top: 1px solid rgba(255,255,255,.12);
+        }}
+        .dh-readout .brk .hd {{
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 0 6px 0;
+            font-size: 9px; letter-spacing: .11em; text-transform: uppercase;
+            color: #6F7C92; font-weight: 800;
+        }}
+        .dh-readout .brk .row {{
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 0;
+            border-top: 1px dashed rgba(255,255,255,.10);
+        }}
+        .dh-readout .brk .sw {{
+            width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto;
+        }}
+        .dh-readout .brk .nm {{
+            flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: #C3CBD9; font-weight: 600;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }}
+        .dh-readout .brk .nm i {{ font-style: normal; color: #7C8AA0; font-weight: 500; }}
+        .dh-readout .brk .qty {{
+            flex: 0 0 auto; min-width: 52px; text-align: right;
+            font-size: 12.5px; color: #fff; font-weight: 800; font-variant-numeric: tabular-nums;
+        }}
+        .dh-readout .brk .qty small {{ font-size: 9.5px; color: #7C8AA0; font-weight: 600; margin-left: 3px; }}
+        .dh-readout .brk .amt {{
+            flex: 0 0 auto; min-width: 108px; text-align: right;
+            font-size: 12px; color: #E8ECF3; font-weight: 700; font-variant-numeric: tabular-nums;
+        }}
+        .dh-readout .grand {{
+            display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+            margin-top: 12px; padding-top: 12px;
+            border-top: 2px solid rgba(255,255,255,.24);
+        }}
+        .dh-readout .grand .k {{
+            font-size: 9.5px; letter-spacing: .11em; text-transform: uppercase;
+            color: #8896AC; font-weight: 800;
+        }}
+        .dh-readout .grand .v {{
+            font-family: {FONT_DISPLAY}; font-size: 20px; font-weight: 800;
+            color: {BRAND['amber']}; letter-spacing: -.01em; font-variant-numeric: tabular-nums;
+        }}
+
+        /* Catatan inline (mis. jarak area kerja). Sengaja TIDAK memakai
+           st.caption: tinggi container caption bawaan Streamlit ikut runtuh
+           saat margin <p>-nya dinolkan di dalam kartu, sehingga tombol di
+           bawahnya menimpa separuh teks. Div sendiri + margin eksplisit
+           menghilangkan tumpang tindih itu. */
+        .dh-inline-note {{
+            display: flex; align-items: center; gap: 8px;
+            background: {NEUTRAL['wash']};
+            border: 1px solid {NEUTRAL['border_soft']};
+            border-left: 3px solid {BRAND['orange']};
+            border-radius: 8px;
+            padding: 9px 12px;
+            margin: 10px 0 2px 0;
+            font-size: 11.5px; color: {NEUTRAL['text_muted']}; font-weight: 600;
+            line-height: 1.4;
+        }}
+        .dh-inline-note b {{ color: {NEUTRAL['text']}; font-weight: 800; }}
+        .dh-inline-note.warn {{
+            border-left-color: {STATUS['warn']};
+            background: {tint(STATUS['warn'], .93)};
+        }}
+
+        /* jarak aman antara catatan dan tombol Hitung FTE */
+        div[class*="st-key-calc_go"] {{ margin-top: 12px !important; }}
+
+        /* daftar statistik ringkas di kartu (dipakai di bawah gauge cost) */
+        .dh-stats {{ margin-top: 10px; }}
+        .dh-stats .row {{
+            display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+            padding: 8px 2px; border-top: 1px dashed {NEUTRAL['border']};
+        }}
+        .dh-stats .row:first-child {{ border-top: none; }}
+        .dh-stats .k {{ font-size: 11.5px; color: {NEUTRAL['text_muted']}; font-weight: 600; }}
+        .dh-stats .v {{
+            font-size: 12.5px; color: {NEUTRAL['text']}; font-weight: 800;
+            font-variant-numeric: tabular-nums; white-space: nowrap;
+        }}
+
         .dh-note {{
             font-size: 11px; color: {NEUTRAL['text_soft']}; margin-top: 2px;
         }}
@@ -642,6 +746,52 @@ def empty_state(title: str, body: str, emoji: str = "📊") -> str:
     return (
         f'<div class="dh-empty"><div class="ico">{emoji}</div>'
         f"<h4>{title}</h4><p>{body}</p></div>"
+    )
+
+
+def inline_note(html: str, warn: bool = False) -> str:
+    cls = "dh-inline-note warn" if warn else "dh-inline-note"
+    return f'<div class="{cls}">{html}</div>'
+
+
+def stat_list(items: list[tuple[str, str]]) -> str:
+    """items = [(label, value), ...] — daftar 'label kiri / nilai kanan'."""
+    rows = "".join(
+        f'<div class="row"><span class="k">{k}</span><span class="v">{v}</span></div>'
+        for k, v in items
+    )
+    return f'<div class="dh-stats">{rows}</div>'
+
+
+def readout_calc(total_fte: str, levels: list[tuple[str, str, str, str]],
+                 grand_label: str, grand_value: str) -> str:
+    """Readout mode Kalkulator: angka besar + rincian per level + total cost.
+
+    `levels` = [(kode, keterangan, qty, nominal), ...] mis.
+    [("M1", "Senior", "2", "Rp 12.000.000"), ...]. Nilainya total lintas role,
+    tidak dipecah per role — cukup untuk pembacaan cepat, rincian per role
+    tetap ada di tabel kolom kiri.
+    """
+    rows = "".join(
+        f'<div class="row">'
+        f'<span class="sw" style="background:{LEVEL_SHADES.get(code, BRAND["orange"])}"></span>'
+        f'<span class="nm">{code} <i>· {note}</i></span>'
+        f'<span class="qty">{qty}<small>org</small></span>'
+        f'<span class="amt">{amount}</span>'
+        f"</div>"
+        for code, note, qty, amount in levels
+    )
+    return (
+        '<div class="dh-readout">'
+        '<div class="label">Total FTE</div>'
+        f'<div class="big">{total_fte}</div>'
+        '<div class="brk">'
+        '<div class="hd"><span class="nm">Level</span>'
+        '<span class="qty">Qty</span><span class="amt">Cost / bulan</span></div>'
+        f"{rows}</div>"
+        f'<div class="grand"><span class="k">{grand_label}</span>'
+        f'<span class="v">{grand_value}</span></div>'
+        "</div>"
     )
 
 
