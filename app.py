@@ -14,7 +14,7 @@ sampingnya, lalu rincian section dengan cost di sampingnya):
     ┌──────────────────────── header band (orange, logo putih) ─────────────┐
     ├─ legenda role ───────────────────────────────────────────────────────┤
     ├─ KPI: Total FTE │ Mekanik │ Electrician │ Welder │ Cost/bulan ───────┤
-    ├─ Total FTE per Section (bar) ─────────────┬─ Komposisi M1–M3 (donut) ┤
+    ├─ MPP per Section (bar) ───────────────────┬─ Komposisi M1–M3 (donut) ┤
     ├─ Persebaran M1–M3 per Section (stack) ────┬─ Cost (speedometer) ─────┤
     └─ Tab: Ringkasan │ Foreman & SPV │ Planner │ Data Unit │ Detail ──────┘
 
@@ -157,43 +157,43 @@ ROLE_LEGEND = [
     ("Welder", theme.ROLE_COLORS["Welder"]),
 ]
 LEVEL_LEGEND = [
-    ("M1", theme.LEVEL_SHADES["M1"]),
-    ("M2", theme.LEVEL_SHADES["M2"]),
-    ("M3", theme.LEVEL_SHADES["M3"]),
+    ("M1 · Senior", theme.LEVEL_SHADES["M1"]),
+    ("M2 · Madya", theme.LEVEL_SHADES["M2"]),
+    ("M3 · Junior", theme.LEVEL_SHADES["M3"]),
 ]
 
 
 def render_summary_tab(summary, mech_total, weld_total, elec_total, cost):
-    st.markdown("**Mekanik per kategori unit**")
-    if summary["mechanic_by_category"]:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**FTE per Kategori & Role**")
+        # Kategori mekanik + Electrician + Welder digabung satu tabel — sebelumnya
+        # Welder/Electrician ada di tabel terpisah di bawah, padahal keduanya sama-sama
+        # "baris company-wide" seperti yang sudah dilakukan di tabel Cost per level.
         rows = [
             [cat, num(v["M1"]), num(v["M2"]), num(v["M3"]), num(v["Tot"])]
             for cat, v in summary["mechanic_by_category"].items()
         ]
-        total_row = [
-            "TOTAL", num(mech_total["M1"]), num(mech_total["M2"]),
-            num(mech_total["M3"]), num(mech_total["Tot"]),
-        ]
-        st.markdown(
-            theme.table_html(["Kategori", "M1", "M2", "M3", "Total"], rows,
-                             total_row=total_row, total_col=4),
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("Tidak ada data mekanik untuk site ini.")
-
-    st.write("")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Welder & Electrician (company-wide)**")
-        rows = [
-            ["Electrician", num(elec_total["M1"]), num(elec_total["M2"]), num(elec_total["Tot"])],
-            ["Welder", num(weld_total["M1"]), num(weld_total["M2"]), num(weld_total["Tot"])],
-        ]
-        st.markdown(
-            theme.table_html(["Role", "M1", "M2", "Total"], rows, total_col=3),
-            unsafe_allow_html=True,
-        )
+        rows.append(["Electrician", num(elec_total["M1"]), num(elec_total["M2"]),
+                     num(elec_total.get("M3", 0)), num(elec_total["Tot"])])
+        rows.append(["Welder", num(weld_total["M1"]), num(weld_total["M2"]),
+                     num(weld_total.get("M3", 0)), num(weld_total["Tot"])])
+        grand = {
+            m: mech_total.get(m, 0) + weld_total.get(m, 0) + elec_total.get(m, 0)
+            for m in ("M1", "M2", "M3", "Tot")
+        }
+        if rows:
+            st.markdown(
+                theme.table_html(
+                    ["Kategori / Role", "M1", "M2", "M3", "Total"], rows,
+                    total_row=["TOTAL", num(grand["M1"]), num(grand["M2"]),
+                               num(grand["M3"]), num(grand["Tot"])],
+                    total_col=4,
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("Tidak ada data untuk site ini.")
     with c2:
         st.markdown("**Cost per level**")
         rows = []
@@ -369,7 +369,7 @@ def render_calculator_mode(backend):
     left, right = st.columns([1.25, 1], gap="medium")
 
     with left:
-        with theme.card("calc_param", "Parameter", "semua kolom wajib kecuali Jenis Unit"):
+        with theme.card("calc_param", "Parameter", "semua kolom wajib"):
             c1, c2 = st.columns(2)
             with c1:
                 site = st.selectbox("Site", options=sites, index=None,
@@ -378,25 +378,16 @@ def render_calculator_mode(backend):
                 sub_category = st.selectbox("Jenis equipment", options=sub_cats, index=None,
                                             placeholder="Pilih sub category…", key="calc1_subcat")
 
-            jenis_options = backend.units_for(sub_category) if sub_category else []
             c3, c4 = st.columns(2)
             with c3:
-                if jenis_options:
-                    jenis_unit = st.selectbox("Jenis unit", options=jenis_options, key="calc1_jenis")
-                else:
-                    jenis_unit = st.text_input("Jenis unit", value="", key="calc1_jenis_text",
-                                               placeholder="opsional")
-            with c4:
                 jumlah_unit = st.number_input("Jumlah unit", min_value=0.0, value=1.0,
                                               step=1.0, key="calc1_jml")
-
-            c5, c6 = st.columns(2)
-            with c5:
+            with c4:
                 pa = st.number_input("Target PA (%)", min_value=1.0, max_value=100.0,
                                      value=85.0, step=1.0, key="calc1_pa")
-            with c6:
-                cf = st.slider("Competency factor", min_value=0.1, max_value=1.0,
-                               value=0.6, step=0.01, key="calc1_cf")
+
+            cf = st.slider("Competency factor", min_value=0.1, max_value=1.0,
+                           value=0.6, step=0.01, key="calc1_cf")
 
             jarak_km = backend.jarak.get(site) if site else None
             if site and jarak_km is None:
@@ -419,7 +410,7 @@ def render_calculator_mode(backend):
             st.session_state.calc1_result = compute_fte(
                 FTEInput(
                     site=site, competency_factor=cf, jarak_km=jarak_km,
-                    sub_category=orig_sc, jenis_unit=jenis_unit or "",
+                    sub_category=orig_sc, jenis_unit="",
                     pa_percent=pa, populasi=jumlah_unit,
                 ),
                 backend,
@@ -638,11 +629,13 @@ def render_basecase_mode(backend):
     # ---------------- KPI ----------------
     k = st.columns(5, gap="small")
     with k[0]:
-        senior = level_totals["M1"] / grand_total * 100 if grand_total else 0
+        pct1 = level_totals["M1"] / grand_total * 100 if grand_total else 0
+        pct2 = level_totals["M2"] / grand_total * 100 if grand_total else 0
+        pct3 = level_totals["M3"] / grand_total * 100 if grand_total else 0
         st.markdown(
             theme.kpi_card(
-                "Total FTE", num(grand_total),
-                f"Senior (M1) <b>{num(senior, 0)}%</b>",
+                "Total Mekanik Needs", num(grand_total),
+                f"M1 <b>{num(pct1, 0)}%</b> · M2 <b>{num(pct2, 0)}%</b> · M3 <b>{num(pct3, 0)}%</b>",
                 accent=theme.BRAND["navy"], emoji="👷",
             ),
             unsafe_allow_html=True,
@@ -651,7 +644,7 @@ def render_basecase_mode(backend):
         share = mech_total["Tot"] / grand_total * 100 if grand_total else 0
         st.markdown(
             theme.kpi_card("Mekanik", num(mech_total["Tot"]),
-                           f"<b>{num(share, 0)}%</b> dari total FTE", role="Mechanic"),
+                           f"<b>{num(share, 0)}%</b> dari MPP", role="Mechanic"),
             unsafe_allow_html=True,
         )
     with k[2]:
@@ -672,7 +665,7 @@ def render_basecase_mode(backend):
         per_fte = cost_total / grand_total if grand_total else 0
         st.markdown(
             theme.kpi_card("Cost per bulan", rp_short(cost_total),
-                           f"<b>{rp_short(per_fte)}</b> per FTE",
+                           f"<b>{rp_short(per_fte)}</b> per MPP",
                            accent=theme.BRAND["orange_deep"], emoji="💰", value_size=21),
             unsafe_allow_html=True,
         )
@@ -682,7 +675,7 @@ def render_basecase_mode(backend):
     # ---------------- baris 1: total + komposisi level ----------------
     r1a, r1b = st.columns([1.6, 1], gap="small")
     with r1a:
-        with theme.card("total_section", "Total FTE per Section",
+        with theme.card("total_section", "MPP per Section",
                         f"{len(summary['mechanic_by_category'])} kategori unit + 2 role company-wide"):
             st.plotly_chart(
                 charts.total_by_section_bar(summary["mechanic_by_category"], weld_total, elec_total),
@@ -713,12 +706,10 @@ def render_basecase_mode(backend):
         top_site = max(scale, key=scale.get) if scale else None
 
         with theme.card("cost_gauge", "Estimasi Cost per Bulan",
-                        "skala relatif antar-site", accent=theme.BRAND["orange_deep"]):
-            st.plotly_chart(charts.cost_gauge(cost_total, scale_max, avg, top_site),
+                        "arahkan mouse ke busur untuk rincian role", accent=theme.BRAND["orange_deep"]):
+            st.plotly_chart(charts.cost_gauge(cost, scale_max, avg, top_site),
                             width="stretch", config={"displayModeBar": False})
             st.markdown(charts.cost_gauge_caption(scale_max, avg, top_site), unsafe_allow_html=True)
-            st.plotly_chart(charts.cost_composition_bar(cost), width="stretch",
-                            config={"displayModeBar": False})
             rows = [
                 [theme.ROLE_LABEL[r],
                  num({"Mechanic": mech_total, "Electric": elec_total, "Welder": weld_total}[r]["Tot"]),
