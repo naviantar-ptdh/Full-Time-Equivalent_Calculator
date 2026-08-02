@@ -752,8 +752,7 @@ def inject_css():
         div[class*="st-key-param_panel"] details summary:hover {{
             background: {tint(BRAND['orange'], .84)} !important;
         }}
-        div[class*="st-key-param_panel"] details summary p,
-        div[class*="st-key-param_panel"] details summary span {{
+        div[class*="st-key-param_panel"] details summary [data-testid="stMarkdownContainer"] p {{
             font-family: {FONT_DISPLAY} !important;
             font-size: 14.5px !important;
             font-weight: 800 !important;
@@ -776,8 +775,7 @@ def inject_css():
             padding: 12px 15px !important;
             background: {NEUTRAL['wash']} !important;
         }}
-        div[class*="st-key-detail_panel"] details summary p,
-        div[class*="st-key-detail_panel"] details summary span {{
+        div[class*="st-key-detail_panel"] details summary [data-testid="stMarkdownContainer"] p {{
             font-size: 13px !important; font-weight: 800 !important;
             color: {NEUTRAL['text']} !important;
         }}
