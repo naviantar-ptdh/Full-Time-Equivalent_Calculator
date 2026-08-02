@@ -1,5 +1,5 @@
 """
-Chart builders (Plotly) — FTE Calculator PT Dharma Henwa (v6).
+Chart builders (Plotly) — FTE Calculator PT Darma Henwa (v6).
 
 Aturan yang dipakai konsisten di seluruh file ini:
 
@@ -73,17 +73,21 @@ def rp(x: float) -> str:
     return "Rp " + num(x)
 
 
-def rp_short(x: float) -> str:
-    """Rp 1,72 M / Rp 320 jt / Rp 4.500 — dipakai di gauge & KPI."""
+def rp_short(x: float, jt_dec: int = 0) -> str:
+    """Rp 1,72 M / Rp 320 jt / Rp 4.500 — dipakai di chart & KPI.
+
+    `jt_dec` menaikkan presisi di rentang juta; dipakai untuk angka seperti
+    tarif Rp 11,5 jt yang kalau dibulatkan ke "Rp 12 jt" jadi salah baca.
+    """
     ax = abs(x)
     if ax >= 1_000_000_000:
         return "Rp " + num(x / 1_000_000_000, 2) + " M"
     if ax >= 1_000_000:
-        return "Rp " + num(x / 1_000_000, 0) + " jt"
+        return "Rp " + num(x / 1_000_000, jt_dec) + " jt"
     return rp(x)
 
 
-def _empty(height: int, msg: str = "Belum ada data untuk ditampilkan") -> go.Figure:
+def _empty(height: int, msg: str = "No data to display yet") -> go.Figure:
     fig = go.Figure()
     fig.update_layout(**_layout(height, xaxis=dict(visible=False), yaxis=dict(visible=False)))
     fig.add_annotation(
@@ -95,75 +99,6 @@ def _empty(height: int, msg: str = "Belum ada data untuk ditampilkan") -> go.Fig
 
 # ---------------------------------------------------------------------------
 # 1) Total FTE per section & per role — batang horizontal, warna per ROLE
-# ---------------------------------------------------------------------------
-def total_by_section_bar(
-    mechanic_by_category: Dict[str, Dict[str, float]],
-    welder_total: dict,
-    electric_total: dict,
-    height: int = 286,
-) -> go.Figure:
-    """Menjawab: 'kebutuhan FTE terbesar ada di mana?'
-
-    Section mekanik diurutkan dari terkecil ke terbesar (Plotly menggambar
-    kategori pertama di bawah, jadi hasilnya batang terpanjang di atas),
-    lalu Welder & Electrician ditempel di bawah sebagai entitas company-wide.
-    """
-    items: List[tuple] = [
-        (cat, sum(v.get(l, 0) for l in LEVELS), ROLE_COLORS["Mechanic"], "Mekanik")
-        for cat, v in mechanic_by_category.items()
-    ]
-    items.sort(key=lambda t: t[1])
-
-    tail = []
-    if electric_total.get("Tot", 0):
-        tail.append(("Electrician", electric_total["Tot"], ROLE_COLORS["Electric"], "Electrician"))
-    if welder_total.get("Tot", 0):
-        tail.append(("Welder", welder_total["Tot"], ROLE_COLORS["Welder"], "Welder"))
-    items = tail + items
-
-    if not items:
-        return _empty(height)
-
-    labels = [i[0] for i in items]
-    values = [i[1] for i in items]
-    colors = [i[2] for i in items]
-    roles = [i[3] for i in items]
-    grand = sum(values) or 1
-
-    fig = go.Figure(
-        go.Bar(
-            x=values,
-            y=labels,
-            orientation="h",
-            marker=dict(color=colors, line=dict(width=0)),
-            text=[num(v) for v in values],
-            textposition="outside",
-            textfont=dict(family="Archivo", size=11, color=NEUTRAL["text"]),
-            cliponaxis=False,
-            hovertext=[
-                f"<b>{lbl}</b><br>{r} · {num(v)} FTE<br>{num(v / grand * 100, 1)}% dari total site"
-                for lbl, v, r in zip(labels, values, roles)
-            ],
-            hovertemplate="%{hovertext}<extra></extra>",
-        )
-    )
-    fig.update_layout(
-        **_layout(
-            height,
-            margin=dict(l=6, r=42, t=6, b=6),
-            xaxis=dict(visible=False, range=[0, max(values) * 1.16]),
-            yaxis=dict(
-                tickfont=dict(family="Public Sans", size=11, color=NEUTRAL["text"]),
-                showgrid=False, ticksuffix="  ",
-            ),
-            bargap=0.32,
-        )
-    )
-    return fig
-
-
-# ---------------------------------------------------------------------------
-# 2) Komposisi level M1–M3 — donut, warna per LEVEL
 # ---------------------------------------------------------------------------
 def level_donut(level_totals: Dict[str, float], height: int = 286) -> go.Figure:
     """Menjawab: 'seberapa berat komposisi tenaga senior vs junior?'
@@ -249,7 +184,7 @@ def level_stack_by_section(
         for cat in sections:
             v = mechanic_by_category[cat].get(lvl, 0)
             y.append(v)
-            hover.append(f"<b>{cat}</b><br>Mekanik {lvl}: {num(v)} FTE")
+            hover.append(f"<b>{cat}</b><br>Mechanic {lvl}: {num(v)} FTE")
         for name, tot in extras:
             v = tot.get(lvl, 0)
             y.append(v)
@@ -309,97 +244,80 @@ def level_stack_by_section(
 # ---------------------------------------------------------------------------
 # 4) Cost — busur komposisi (skala relatif antar-site)
 # ---------------------------------------------------------------------------
-def cost_gauge(
-    cost_breakdown: dict,
-    scale_max: float,
-    avg: float | None = None,
-    top_site: str | None = None,
-    height: int = 208,
+# ---------------------------------------------------------------------------
+# 4) Cost — setengah lingkaran komposisi per role
+# ---------------------------------------------------------------------------
+def share_semicircle(
+    labels: List[str],
+    values: List[float],
+    colors: List[str],
+    center_value: str,
+    center_note: str = "",
+    height: int = 210,
+    hover_fmt=None,
 ) -> go.Figure:
-    """Busur setengah-donut: posisi DAN komposisi cost dalam satu bentuk.
+    """Half donut: one headline number in the middle, colour = share of each part.
 
-    v6 memakai `go.Indicator` (speedometer klasik) untuk chart ini. Dua
-    masalah muncul dari situ: (1) `go.Indicator` memang tidak mendukung
-    hover sama sekali — itu batas Plotly, bukan pilihan desain — jadi tidak
-    ada cara memberi tooltip di atasnya; (2) warna "steps"-nya cuma gradasi
-    oranye generik, tidak menjelaskan apa-apa selain posisi jarum.
-
-    Sekarang busurnya dibangun dari `go.Pie` (bukan Indicator), diputar dan
-    disembunyikan separuh, supaya betul-betul bisa di-hover. Panjang busur
-    berwarna = total cost site ini, dipecah per role (Mekanik/Electrician/
-    Welder — warna sama seperti dipakai di seluruh dashboard); sisa busur
-    abu-abu muda = jarak menuju site termahal. Jadi posisi batas
-    warna-ke-abu ITU SENDIRI adalah "jarum"-nya — tidak perlu elemen
-    terpisah, dan setiap segmen berwarna bisa di-hover untuk lihat rincian
-    role-nya.
+    Deliberately not a speedometer — there is no scale arc, no needle, and no
+    comparison against another entity. The half-circle shape comes from adding
+    one transparent slice the size of the total and rotating the pie by 270
+    degrees, so exactly the top half stays visible.
     """
-    mech = cost_breakdown.get("Mechanic", {}).get("Tot", 0.0)
-    elec = cost_breakdown.get("Electric", {}).get("Tot", 0.0)
-    weld = cost_breakdown.get("Welder", {}).get("Tot", 0.0)
-    total = mech + elec + weld
-    scale_max = max(scale_max, total, 1.0)
-    remainder = max(scale_max - total, 0.0)
+    pairs = [(l, v, c) for l, v, c in zip(labels, values, colors) if v > 0]
+    if not pairs:
+        return _empty(height)
+    labels = [p[0] for p in pairs]
+    values = [p[1] for p in pairs]
+    colors = [p[2] for p in pairs]
+    total = sum(values)
 
-    def seg_hover(role_label, v):
-        return f"<b>{role_label}</b><br>{rp(v)} · {num(v / total * 100, 1)}% dari cost site ini" if total > 0 else ""
-
-    # Separuh atas = data asli (mech, elec, weld, sisa). Separuh bawah =
-    # satu slice bayangan sebesar total separuh atas (transparan), supaya
-    # lingkaran penuh Plotly TAMPAK seperti busur setengah lingkaran saja.
-    half_total = scale_max
-    labels = ["Mekanik", "Electrician", "Welder", "Sisa kapasitas", ""]
-    values = [mech, elec, weld, remainder, half_total]
-    colors = [
-        ROLE_COLORS["Mechanic"], ROLE_COLORS["Electric"], ROLE_COLORS["Welder"],
-        NEUTRAL["border_soft"], "rgba(0,0,0,0)",
-    ]
-    hovertext = [
-        seg_hover("Mekanik", mech), seg_hover("Electrician", elec), seg_hover("Welder", weld),
-        f"<b>Sisa kapasitas</b><br>{rp(remainder)} menuju site termahal" if remainder > 0 else "",
-        "",
-    ]
+    if hover_fmt is None:
+        def hover_fmt(label, value):
+            return f"<b>{label}</b><br>{rp(value)}<br>{num(value / total * 100, 1)}% of total"
 
     fig = go.Figure(
         go.Pie(
-            labels=labels, values=values, hole=0.68,
-            rotation=270, direction="clockwise", sort=False,
-            marker=dict(colors=colors, line=dict(color="#fff", width=2)),
+            labels=labels + ["_pad"],
+            values=values + [total],
+            hole=0.66,
+            rotation=270,
+            sort=False,
+            direction="clockwise",
+            marker=dict(colors=colors + ["rgba(0,0,0,0)"],
+                        line=dict(color="#FFFFFF", width=2)),
             textinfo="none",
-            hovertext=hovertext,
+            hovertext=[hover_fmt(l, v) for l, v in zip(labels, values)] + [""],
             hovertemplate="%{hovertext}<extra></extra>",
+            hoverinfo="text",
         )
     )
-
-    pct = total / scale_max * 100 if scale_max else 0
     fig.add_annotation(
-        text=(
-            f"<span style='font-family:Archivo;font-size:26px;font-weight:800;color:{NEUTRAL['text']}'>{rp_short(total)}</span>"
-            f"<br><span style='font-size:10px;color:{NEUTRAL['text_muted']}'>per bulan · {num(pct, 0)}% dari site termahal</span>"
-        ),
-        showarrow=False, xref="paper", yref="paper", x=0.5, y=0.48, align="center",
+        x=0.5, y=0.40, xref="paper", yref="paper", showarrow=False,
+        text=center_value,
+        font=dict(family="Archivo", size=26, color=BRAND["orange_deep"]),
     )
-    fig.update_layout(
-        **_layout(
-            height,
-            margin=dict(l=10, r=10, t=6, b=0),
-            showlegend=False,
+    if center_note:
+        fig.add_annotation(
+            x=0.5, y=0.25, xref="paper", yref="paper", showarrow=False,
+            text=center_note,
+            font=dict(family="Public Sans", size=10.5, color=NEUTRAL["text_muted"]),
         )
-    )
+    fig.update_layout(**_layout(height, margin=dict(l=6, r=6, t=6, b=0)))
     return fig
 
 
-def cost_gauge_caption(scale_max: float, avg: float, top_site: str | None) -> str:
-    """Keterangan busur — wajib ada, karena skalanya relatif."""
-    site = f" (<b>{top_site}</b>)" if top_site else ""
-    return (
-        f'<div class="dh-note">Warna = komposisi cost per role di site ini. Abu-abu = jarak menuju '
-        f'{rp_short(scale_max)}, yaitu cost site tertinggi{site}. Rata-rata antar-site: {rp_short(avg)}.</div>'
+def cost_semicircle(cost_breakdown: dict, center_value: str, center_note: str = "",
+                    height: int = 210) -> go.Figure:
+    """Half donut of monthly/yearly cost, split by role."""
+    roles = ["Mechanic", "Electric", "Welder"]
+    return share_semicircle(
+        [ROLE_LABEL[r] for r in roles],
+        [cost_breakdown.get(r, {}).get("Tot", 0) for r in roles],
+        [ROLE_COLORS[r] for r in roles],
+        center_value, center_note, height,
     )
 
 
-# ---------------------------------------------------------------------------
-# 5) Mode Kalkulator — donut per role untuk 1 jenis unit
-# ---------------------------------------------------------------------------
 def role_donut(fte_table: dict, height: int = 210, show_legend: bool = True) -> go.Figure:
     roles = ["Mechanic", "Electric", "Welder"]
     vals = [fte_table.get(r, {}).get("Tot", 0) for r in roles]
