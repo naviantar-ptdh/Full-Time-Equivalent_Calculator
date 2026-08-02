@@ -1,5 +1,5 @@
 """
-Design system — FTE Calculator PT Dharma Henwa (v6, "Looker light").
+Design system — FTE Calculator PT Darma Henwa (v6, "Looker light").
 
 Arah desain (dipilih user): TERANG, mengikuti nuansa dashboard Looker Studio
 PTDH — header band gradasi orange dengan logo putih, kartu putih di atas
@@ -93,7 +93,7 @@ FONT_DISPLAY = "'Archivo', 'Segoe UI', sans-serif"
 FONT_BODY = "'Public Sans', 'Segoe UI', sans-serif"
 
 ROLE_LABEL = {
-    "Mechanic": "Mekanik",
+    "Mechanic": "Mechanic",
     "Welder": "Welder",
     "Electric": "Electrician",
 }
@@ -106,7 +106,7 @@ ROLE_ICON_FILE = {
 
 LEVEL_NOTE = {
     "M1": "Senior",
-    "M2": "Madya",
+    "M2": "Middle",
     "M3": "Junior",
 }
 
@@ -268,12 +268,19 @@ def inject_css():
             padding: 20px 22px;
             min-height: 84px;
             display: flex; align-items: center; gap: 18px;
+            flex-wrap: wrap;
             margin-bottom: 14px;
             box-shadow: 0 6px 18px -8px rgba(217,78,0,.55);
         }}
         .dh-band .logo {{ height: 46px; width: auto; flex: 0 0 auto; }}
-        .dh-band .rule {{ width: 1px; height: 40px; background: rgba(255,255,255,.45); }}
-        .dh-band .heading {{ flex: 1 1 auto; min-width: 0; }}
+        .dh-band .rule {{ width: 1px; height: 40px; background: rgba(255,255,255,.45); flex: 0 0 auto; }}
+        /* basis 260px: kalau sisa lebar kurang dari itu, .heading TURUN ke baris
+           berikutnya alih-alih diperas sampai satu huruf per baris. Sebelumnya
+           .chips memakai flex 0 0 auto (tidak pernah menyusut) sementara
+           .heading boleh menyusut tanpa batas — di layar HP chip "Site ACP" +
+           "Competency factor 0,60" menghabiskan seluruh baris dan judulnya
+           tersisa selebar satu karakter. */
+        .dh-band .heading {{ flex: 1 1 260px; min-width: 0; }}
         .dh-band .heading .title {{
             font-family: {FONT_DISPLAY}; font-weight: 800; font-size: 21px;
             color: #fff; line-height: 1.15; letter-spacing: -.01em;
@@ -282,13 +289,37 @@ def inject_css():
         .dh-band .heading .sub {{
             font-size: 11.5px; color: rgba(255,255,255,.85); font-weight: 500; margin-top: 1px;
         }}
-        .dh-band .chips {{ display: flex; gap: 8px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }}
+        .dh-band .chips {{
+            display: flex; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end;
+            min-width: 0;
+        }}
         .dh-band .chip {{
             background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35);
             border-radius: 999px; padding: 5px 12px; color: #fff;
             font-size: 11.5px; font-weight: 600; backdrop-filter: blur(2px);
         }}
         .dh-band .chip b {{ font-weight: 800; }}
+
+        /* Layar sempit (HP): band ditumpuk vertikal. Logo + judul satu baris,
+           chip pindah ke baris bawah dan rata kiri. Judul boleh membungkus
+           penuh karena tidak ada lagi yang berebut lebar dengannya. */
+        @media (max-width: 720px) {{
+            .dh-band {{
+                padding: 15px 16px; gap: 12px; min-height: 0;
+                align-items: flex-start;
+            }}
+            .dh-band .logo {{ height: 36px; }}
+            .dh-band .rule {{ height: 32px; }}
+            .dh-band .heading {{ flex: 1 1 140px; }}
+            .dh-band .heading .title {{
+                font-size: 17px; white-space: normal; overflow: visible; text-overflow: clip;
+            }}
+            .dh-band .heading .sub {{ font-size: 11px; margin-top: 3px; }}
+            .dh-band .chips {{
+                flex: 1 1 100%; justify-content: flex-start; gap: 6px;
+            }}
+            .dh-band .chip {{ font-size: 11px; padding: 4px 10px; }}
+        }}
 
         /* strip navy: legenda / catatan skala */
         .dh-strip {{
@@ -674,6 +705,83 @@ def inject_css():
             font-variant-numeric: tabular-nums;
         }}
 
+        /* Grid parameter rumus — dipakai di panel "Formula parameters" yang
+           bisa dibuka-tutup di atas dashboard. Kotak kecil label + nilai,
+           membungkus sendiri sesuai lebar layar. */
+        .dh-infogrid {{
+            display: grid; gap: 8px;
+            grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+        }}
+        .dh-infogrid .cell {{
+            background: {NEUTRAL['wash']};
+            border: 1px solid {NEUTRAL['border_soft']};
+            border-left: 3px solid {BRAND['orange']};
+            border-radius: 8px; padding: 9px 11px;
+        }}
+        .dh-infogrid .cell.mut {{ border-left-color: {NEUTRAL['border']}; }}
+        .dh-infogrid .k {{
+            font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase;
+            color: {NEUTRAL['text_soft']}; font-weight: 800;
+        }}
+        .dh-infogrid .v {{
+            font-size: 14px; font-weight: 800; color: {NEUTRAL['text']};
+            margin-top: 2px; font-variant-numeric: tabular-nums;
+        }}
+        .dh-infogrid .n {{ font-size: 10.5px; color: {NEUTRAL['text_muted']}; font-weight: 500; }}
+        .dh-secnote {{
+            font-size: 11.5px; color: {NEUTRAL['text_muted']};
+            margin: 0 0 9px 0; font-weight: 500;
+        }}
+
+        /* Expander "Formula parameters" — dibuat menonjol.
+           Versi sebelumnya memakai expander polos bawaan Streamlit, yang di
+           tengah dashboard putih nyaris tidak terlihat: hanya orang yang tahu
+           panel itu ada yang akan mengkliknya. Sekarang ia berlatar oranye
+           muda, bergaris tegas, dan judulnya besar + tebal. */
+        div[class*="st-key-param_panel"] details {{
+            border: 1.5px solid {tint(BRAND['orange'], .62)} !important;
+            border-radius: 12px !important;
+            background: {tint(BRAND['orange'], .955)} !important;
+            box-shadow: 0 4px 14px -10px rgba(217,78,0,.65);
+            overflow: hidden;
+        }}
+        div[class*="st-key-param_panel"] details summary {{
+            padding: 13px 15px !important;
+            background: {tint(BRAND['orange'], .90)} !important;
+        }}
+        div[class*="st-key-param_panel"] details summary:hover {{
+            background: {tint(BRAND['orange'], .84)} !important;
+        }}
+        div[class*="st-key-param_panel"] details summary p,
+        div[class*="st-key-param_panel"] details summary span {{
+            font-family: {FONT_DISPLAY} !important;
+            font-size: 14.5px !important;
+            font-weight: 800 !important;
+            color: {BRAND['orange_deep']} !important;
+            letter-spacing: -.005em;
+        }}
+        div[class*="st-key-param_panel"] details summary svg {{
+            fill: {BRAND['orange_deep']} !important;
+            color: {BRAND['orange_deep']} !important;
+        }}
+
+        /* Expander "Details" — netral, tidak boleh berebut perhatian dengan
+           panel parameter di atas. */
+        div[class*="st-key-detail_panel"] details {{
+            border: 1px solid {NEUTRAL['border']} !important;
+            border-radius: 12px !important;
+            background: {NEUTRAL['card']} !important;
+        }}
+        div[class*="st-key-detail_panel"] details summary {{
+            padding: 12px 15px !important;
+            background: {NEUTRAL['wash']} !important;
+        }}
+        div[class*="st-key-detail_panel"] details summary p,
+        div[class*="st-key-detail_panel"] details summary span {{
+            font-size: 13px !important; font-weight: 800 !important;
+            color: {NEUTRAL['text']} !important;
+        }}
+
         /* daftar statistik ringkas di kartu (dipakai di bawah gauge cost) */
         .dh-stats {{ margin-top: 10px; }}
         .dh-stats .row {{
@@ -707,7 +815,7 @@ def inject_css():
 # ---------------------------------------------------------------------------
 def header_band(title: str, subtitle: str = "", chips: list[str] | None = None) -> str:
     logo = image_uri("logo_putih (2).png")
-    logo_html = f'<img class="logo" src="{logo}" alt="PT Dharma Henwa"/><div class="rule"></div>' if logo else ""
+    logo_html = f'<img class="logo" src="{logo}" alt="PT Darma Henwa"/><div class="rule"></div>' if logo else ""
     chips_html = "".join(f'<div class="chip">{c}</div>' for c in (chips or []))
     return (
         f'<div class="dh-band">{logo_html}'
@@ -805,6 +913,19 @@ def donut_legend(items: list[tuple[str, str, str, str]]) -> str:
         for color, label, fte, pct in items
     )
     return f'<div class="dh-plegend">{rows}</div>'
+
+
+def info_grid(items: list[tuple[str, str, str]]) -> str:
+    """Grid parameter: [(label, nilai, catatan), ...]. Catatan boleh string kosong."""
+    cells = "".join(
+        f'<div class="cell{"" if value else " mut"}">'
+        f'<div class="k">{label}</div>'
+        f'<div class="v">{value or "&ndash;"}</div>'
+        + (f'<div class="n">{note}</div>' if note else "")
+        + "</div>"
+        for label, value, note in items
+    )
+    return f'<div class="dh-infogrid">{cells}</div>'
 
 
 def stat_list(items: list[tuple[str, str]]) -> str:
