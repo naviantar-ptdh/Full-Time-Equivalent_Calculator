@@ -1,28 +1,29 @@
-# app.py (v6 — "Looker light": header band orange, kartu putih, 1 layar utama)
+# app.py (v7 — "Looker light": orange header band, white cards, English UI)
 """
-FTE Calculator — PT Dharma Henwa
+FTE Calculator — PT Darma Henwa
 
-Dua mode (dipilih dari nav di sidebar):
+Three modes (picked from the sidebar nav):
 
-*   **Kalkulator** — hitung 1 jenis unit, hasil langsung tampil di readout.
-*   **Basecase**   — hitung seluruh unit dalam 1 Site dari Sheet9, ditampilkan
-    sebagai dashboard.
+*   **Calculator**        — one equipment type, result shown straight away.
+*   **Basecase All Unit** — every unit of ONE site, shown as a dashboard.
+*   **Summary**           — the same dashboard, aggregated across ALL sites.
 
-Susunan layar mode Basecase (mengikuti permintaan: total dulu, komposisi di
-sampingnya, lalu rincian section dengan cost di sampingnya):
+Basecase and Summary share one dashboard body (`render_dashboard_body`), so a
+layout change lands in both at once:
 
-    ┌──────────────────────── header band (orange, logo putih) ─────────────┐
-    ├─ legenda role ───────────────────────────────────────────────────────┤
-    ├─ KPI: Total FTE │ Mekanik │ Electrician │ Welder │ Cost/bulan ───────┤
-    ├─ MPP per Section (bar) ───────────────────┬─ Komposisi M1–M3 (donut) ┤
-    ├─ Persebaran M1–M3 per Section (stack) ────┬─ Cost (speedometer) ─────┤
-    └─ Tab: Ringkasan │ Foreman & SPV │ Planner │ Data Unit │ Detail ──────┘
+    header band  ->  formula parameters (collapsed)  ->  role legend
+    ->  KPI row  ->  section chart + M1-M3 donut
+    ->  monthly cost (half circle + detail) + yearly cost
+    ->  details (collapsed expander -> tabs)
 
-Baris KPI dan dua baris chart dirancang muat dalam satu layar tanpa scroll di
-laptop 1920×1080; tab rincian di bawahnya memang perlu discroll sedikit.
+The section chart used to be two charts (totals, then the M1-M3 split); they
+are one stacked chart now, with each section total printed above its bar. The
+cost chart used to be a speedometer scaled against the most expensive site —
+that comparison is gone; it is a plain half circle whose colours are the
+per-role share, paired with a yearly twin.
 
-Logika perhitungan (`calculator.py`, `data_loader.py`, `config.py`) tidak
-diubah sama sekali — file ini murni lapisan tampilan.
+Calculation logic (`calculator.py`, `data_loader.py`, `config.py`) is
+untouched — this file is purely the presentation layer.
 """
 import math
 import os
@@ -42,7 +43,14 @@ from calculator import (
     compute_staff_fte,
 )
 from charts import num, rp, rp_short
-from config import MONTH_COLS, UNIT_EDIT_PASSWORD
+from config import (
+    BASE_MECHANIC_HOURS,
+    COST_RATE,
+    MONTH_COLS,
+    STAFF_COST_RATE,
+    TRAVEL_DIVISOR,
+    UNIT_EDIT_PASSWORD,
+)
 from data_loader import (
     BackendDataError,
     UnitRow,
@@ -52,7 +60,7 @@ from data_loader import (
 )
 
 st.set_page_config(
-    page_title="FTE Calculator — PT Dharma Henwa",
+    page_title="FTE Calculator — PT Darma Henwa",
     page_icon="🟠",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -67,7 +75,7 @@ theme.inject_css()
 # ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
-@st.cache_data(ttl=600, show_spinner="Mengambil data referensi BACKEND…")
+@st.cache_data(ttl=600, show_spinner="Loading BACKEND reference data…")
 def get_backend():
     if DEMO:
         import demo_data
@@ -75,7 +83,7 @@ def get_backend():
     return load_backend_data()
 
 
-@st.cache_data(ttl=600, show_spinner="Mengambil data unit per site…")
+@st.cache_data(ttl=600, show_spinner="Loading unit data per site…")
 def get_units():
     if DEMO:
         import demo_data
@@ -83,7 +91,7 @@ def get_units():
     return load_unit_data()
 
 
-@st.cache_data(ttl=600, show_spinner="Mengambil data Hasil Staff…")
+@st.cache_data(ttl=600, show_spinner="Loading staff data…")
 def get_staff():
     if DEMO:
         import demo_data
@@ -117,18 +125,41 @@ def df_to_units(df: pd.DataFrame) -> List[UnitRow]:
     return rows
 
 
-def site_cost_scale(backend, units_all, competency_factor: float) -> dict:
-    """Cost/bulan tiap site — dipakai sebagai skala gauge (0 → site tertinggi).
+def _blank_levels() -> dict:
+    return {"M1": 0.0, "M2": 0.0, "M3": 0.0, "Tot": 0.0}
 
-    Dihitung sekali lalu disimpan di session_state per nilai competency
-    factor, karena gauge-nya memakai skala relatif antar-site sehingga
-    angka pembandingnya harus konsisten selama parameter tidak berubah.
+
+def _add_levels(dst: dict, src_: dict) -> dict:
+    for k in ("M1", "M2", "M3", "Tot"):
+        dst[k] = dst.get(k, 0.0) + src_.get(k, 0.0)
+    return dst
+
+
+def aggregate_all_sites(backend, units_all, competency_factor: float) -> dict | None:
+    """Roll every site up into one summary/cost pair shaped like a single site.
+
+    Summary mode reuses the exact dashboard body that Basecase uses, so the
+    aggregate has to mimic the shape `compute_site_summary` returns:
+    mechanic_by_category, welder_total, electric_total, detail_rows,
+    skipped_units. Each site is still computed by the untouched calculator —
+    only the results are summed here.
+
+    Cached in session_state per competency factor: recomputing every site on
+    each rerun is the single most expensive thing this app does.
     """
-    key = f"_cost_scale_{competency_factor:.2f}"
+    key = f"_allsites_{competency_factor:.2f}"
     if key in st.session_state:
         return st.session_state[key]
 
-    per_site = {}
+    mech_by_cat: dict = {}
+    weld = _blank_levels()
+    elec = _blank_levels()
+    cost_total: dict = {r: _blank_levels() for r in ("Mechanic", "Electric", "Welder")}
+    cost_total["Total"] = _blank_levels()
+    detail_rows, skipped, per_site, ok_sites = [], [], {}, []
+    oper_acc: dict = {}
+    plan_acc: dict = {}
+
     for s in (backend.sites or []):
         rows = units_all.get(s) or []
         if not rows:
@@ -138,38 +169,452 @@ def site_cost_scale(backend, units_all, competency_factor: float) -> dict:
             c = compute_site_cost(
                 summ["mechanic_by_category"], summ["welder_total"], summ["electric_total"]
             )
-            total = c["Total"]["Tot"]
-            if total > 0:
-                per_site[s] = total
         except (CalculationError, BackendDataError, KeyError, ValueError):
             continue
 
-    st.session_state[key] = per_site
-    return per_site
+        ok_sites.append(s)
+        per_site[s] = c["Total"]["Tot"]
+
+        # Staff dihitung per site lalu dijumlahkan per posisi, supaya section
+        # Staff di mode Summary memakai blok tampilan yang sama persis dengan
+        # mode Basecase.
+        try:
+            staff = compute_staff_fte(
+                s, summ["mechanic_by_category"], summ["welder_total"],
+                summ["electric_total"], get_staff(),
+            )
+        except (CalculationError, BackendDataError, KeyError, ValueError):
+            staff = {"operational": [], "planner": []}
+        for r in staff["operational"]:
+            acc = oper_acc.setdefault(
+                r["posisi"], {"posisi": r["posisi"], "jumlah_mekanik": 0,
+                              "foreman": 0, "supervisor": 0})
+            acc["jumlah_mekanik"] += r["jumlah_mekanik"]
+            acc["foreman"] += r["foreman"]
+            acc["supervisor"] += r["supervisor"]
+        for r in staff["planner"]:
+            acc = plan_acc.setdefault(r["posisi"], {"posisi": r["posisi"], "fte": 0})
+            acc["fte"] += r["fte"]
+        for cat, v in summ["mechanic_by_category"].items():
+            mech_by_cat.setdefault(cat, _blank_levels())
+            _add_levels(mech_by_cat[cat], v)
+        _add_levels(weld, summ["welder_total"])
+        _add_levels(elec, summ["electric_total"])
+        for role in ("Mechanic", "Electric", "Welder", "Total"):
+            _add_levels(cost_total[role], c.get(role, {}))
+        for d in summ["detail_rows"]:
+            detail_rows.append({**d, "site": s})
+        for sk in summ["skipped_units"]:
+            skipped.append([s, *sk] if isinstance(sk, (list, tuple)) else [s, sk])
+
+    if not ok_sites:
+        st.session_state[key] = None
+        return None
+
+    # kategori diurutkan mengikuti urutan resmi di BACKEND supaya sumbu X
+    # chart section konsisten dengan mode Basecase
+    order = [c for c in (backend.classification_order or []) if c in mech_by_cat]
+    order += [c for c in mech_by_cat if c not in order]
+    mech_by_cat = {c: mech_by_cat[c] for c in order}
+
+    out = {
+        "summary": {
+            "mechanic_by_category": mech_by_cat,
+            "welder_total": weld,
+            "electric_total": elec,
+            "detail_rows": detail_rows,
+            "skipped_units": skipped,
+        },
+        "cost": cost_total,
+        "sites": ok_sites,
+        "per_site_cost": per_site,
+        "unit_rows": sum(len(units_all.get(s) or []) for s in ok_sites),
+        "operational": list(oper_acc.values()),
+        "planner": list(plan_acc.values()),
+    }
+    st.session_state[key] = out
+    return out
 
 
-# ---------------------------------------------------------------------------
-# Blok tampilan yang dipakai bersama
-# ---------------------------------------------------------------------------
 ROLE_LEGEND = [
-    ("Mekanik", theme.ROLE_COLORS["Mechanic"]),
+    ("Mechanic", theme.ROLE_COLORS["Mechanic"]),
     ("Electrician", theme.ROLE_COLORS["Electric"]),
     ("Welder", theme.ROLE_COLORS["Welder"]),
 ]
 LEVEL_LEGEND = [
     ("M1 · Senior", theme.LEVEL_SHADES["M1"]),
-    ("M2 · Madya", theme.LEVEL_SHADES["M2"]),
+    ("M2 · Middle", theme.LEVEL_SHADES["M2"]),
     ("M3 · Junior", theme.LEVEL_SHADES["M3"]),
 ]
+MONTHS_PER_YEAR = 12
+
+
+# ---------------------------------------------------------------------------
+# Formula parameters panel
+# ---------------------------------------------------------------------------
+def formula_items(backend, unit_qty: float, site: str | None = None) -> list:
+    """The four inputs the manpower formula actually turns on.
+
+    Trimmed down deliberately: the earlier version listed every constant in
+    the model (RACI, splits, cost rates, competency factor...), which buried
+    the numbers a reader checks in practice. Unit QUANTITY is used here, not
+    the number of unit types — one Sheet9 row can carry 25 units.
+    """
+    if site:
+        jarak = backend.jarak.get(site)
+        ratio = backend.ratio_shift.get(site)
+        lost = backend.lost_time.get(site)
+        return [
+            ("Unit quantity", num(unit_qty), "total units in scope"),
+            ("Shift ratio", num(ratio, 2) if ratio is not None else "", f"site {site}"),
+            ("Distance", f"{num(jarak, 2)} km" if jarak is not None else "",
+             f"travel hours = distance / {TRAVEL_DIVISOR}"),
+            ("Effective working hour",
+             f"{num(BASE_MECHANIC_HOURS - lost, 2)} h" if lost is not None else "",
+             f"{num(BASE_MECHANIC_HOURS)} − lost time {num(lost, 2)} h"
+             if lost is not None else ""),
+        ]
+
+    dists = [v for v in backend.jarak.values() if v is not None]
+    ratios = list(backend.ratio_shift.values())
+    losts = list(backend.lost_time.values())
+    ewh = [BASE_MECHANIC_HOURS - v for v in losts]
+    def rng(vals, dec=2, unit=""):
+        if not vals:
+            return ""
+        lo, hi = min(vals), max(vals)
+        if abs(hi - lo) < 1e-9:
+            return f"{num(lo, dec)}{unit}"
+        return f"{num(lo, dec)} – {num(hi, dec)}{unit}"
+    return [
+        ("Unit quantity", num(unit_qty), "total units across all sites"),
+        ("Shift ratio", rng(ratios), "range across sites"),
+        ("Distance", rng(dists, 2, " km"), f"travel hours = distance / {TRAVEL_DIVISOR}"),
+        ("Effective working hour", rng(ewh, 2, " h"),
+         f"{num(BASE_MECHANIC_HOURS)} − lost time"),
+    ]
+
+
+def unit_list_df(detail_rows: list, with_site: bool = False) -> pd.DataFrame:
+    """The unit list that used to live in the "Per-unit detail" tab.
+
+    It moved into the parameters panel because that is where a reader asks
+    "which units is this built from?". In Summary the same unit type shows up
+    once per site, so a Site column is prepended to keep the rows distinct.
+    """
+    cols = (["Site"] if with_site else []) + ["Category", "Unit Type", "Qty", "PA (%)"]
+    rows = []
+    for d in detail_rows:
+        row = {
+            "Category": d["category"],
+            "Unit Type": d["jenis_unit"],
+            "Qty": d["jumlah_unit"],
+            "PA (%)": d["pa"],
+        }
+        if with_site:
+            row = {"Site": d.get("site", ""), **row}
+        rows.append(row)
+    return pd.DataFrame(rows, columns=cols)
+
+
+def render_formula_panel(items: list, detail_rows: list, with_site: bool = False,
+                         skipped: list | None = None):
+    with st.container(key="param_panel"):
+        with st.expander("⚙️  Formula parameters & unit list  —  click to open",
+                         expanded=False):
+            st.markdown(
+                '<p class="dh-secnote">These four inputs drive the manpower '
+                'formula. The table below lists every unit the numbers are '
+                'built from.</p>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(theme.info_grid(items), unsafe_allow_html=True)
+            st.write("")
+            df = unit_list_df(detail_rows, with_site)
+            st.markdown(f"**Unit list — {len(df)} rows**")
+            if len(df):
+                st.dataframe(df, width="stretch", hide_index=True,
+                             height=min(360, 40 + 35 * len(df)))
+            else:
+                st.info("No unit rows were calculated.")
+            if skipped:
+                st.caption(
+                    f"{len(skipped)} rows skipped — Sub Category not registered in BACKEND."
+                )
+
+
+# ---------------------------------------------------------------------------
+# Cost blocks — monthly and yearly share one builder
+# ---------------------------------------------------------------------------
+def cost_detail_table(cost: dict, head_counts: dict, grand_head: float,
+                      factor: int = 1) -> str:
+    """Role | MPP | M1 | M2 | M3 | Total.
+
+    MPP is a headcount; the four level columns are money. `factor` turns the
+    monthly figures into yearly ones without recomputing anything.
+    """
+    rows = []
+    for role in ("Mechanic", "Electric", "Welder"):
+        v = cost.get(role, {})
+        rows.append([
+            theme.ROLE_LABEL[role],
+            num(head_counts[role].get("Tot", 0)),
+            rp_short(v.get("M1", 0) * factor),
+            rp_short(v.get("M2", 0) * factor),
+            rp_short(v.get("M3", 0) * factor),
+            rp_short(v.get("Tot", 0) * factor),
+        ])
+    t = cost.get("Total", {})
+    return theme.table_html(
+        ["Role", "MPP", "M1", "M2", "M3", "Total"], rows,
+        total_row=[
+            "TOTAL", num(grand_head),
+            rp_short(t.get("M1", 0) * factor), rp_short(t.get("M2", 0) * factor),
+            rp_short(t.get("M3", 0) * factor), rp_short(t.get("Tot", 0) * factor),
+        ],
+        total_col=5,
+    )
+
+
+def render_cost_block(key: str, title: str, sub: str, cost: dict, head_counts: dict,
+                      grand_head: float, factor: int, per_head_label: str):
+    total = cost.get("Total", {}).get("Tot", 0) * factor
+    per_head = total / grand_head if grand_head else 0
+    with theme.card(key, title, sub, accent=theme.BRAND["orange_deep"]):
+        st.plotly_chart(
+            charts.cost_semicircle(
+                cost, rp_short(total), f"{rp_short(per_head)} {per_head_label}", height=200,
+            ),
+            width="stretch", config={"displayModeBar": False},
+        )
+        st.markdown(theme.legend_html(ROLE_LEGEND), unsafe_allow_html=True)
+        st.markdown(cost_detail_table(cost, head_counts, grand_head, factor),
+                    unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
+# Staff section (Foreman / Supervisor / Planner)
+# ---------------------------------------------------------------------------
+STAFF_COLORS = {
+    "Foreman": theme.BRAND["orange"],
+    "Supervisor": theme.BRAND["navy"],
+}
+
+
+def render_staff_section(operational: list, planner: list):
+    """Staff gets its own section on the dashboard, mirroring the mechanic block.
+
+    It used to be hidden inside the Details expander. Composition is shown as a
+    table rather than a chart on purpose: foreman and supervisor land on 1 per
+    section almost everywhere, so a bar chart of identical bars would carry no
+    information. The cost split, which IS proportional, gets the half circle.
+    """
+    st.write("")
+    st.markdown(
+        theme.legend_strip("Staff", [("Foreman", STAFF_COLORS["Foreman"]),
+                                     ("Supervisor", STAFF_COLORS["Supervisor"])]),
+        unsafe_allow_html=True,
+    )
+
+    if not operational and not planner:
+        st.markdown(
+            theme.empty_state(
+                "No staff data",
+                "Fill in Area Kerja, Beban Admin and Jam Efektif on the Hasil Staff sheet.",
+                "🗂️",
+            ),
+            unsafe_allow_html=True,
+        )
+        return
+
+    f_sum = sum(r["foreman"] for r in operational)
+    s_sum = sum(r["supervisor"] for r in operational)
+    p_sum = sum(r["fte"] for r in planner)
+    f_cost = f_sum * STAFF_COST_RATE["Foreman"]
+    s_cost = s_sum * STAFF_COST_RATE["Supervisor"]
+    staff_cost = f_cost + s_cost
+
+    s1, s2 = st.columns([1.6, 1], gap="small")
+
+    with s1:
+        with theme.card("staff_table", "Foreman & Supervisor per section",
+                        "one line per section, plus the planner roles",
+                        accent=theme.BRAND["navy"]):
+            rows = [
+                [r["posisi"], num(r["jumlah_mekanik"]), num(r["foreman"]),
+                 num(r["supervisor"]), num(r["foreman"] + r["supervisor"])]
+                for r in operational
+            ]
+            if rows:
+                st.markdown(
+                    theme.table_html(
+                        ["Section", "Mechanics", "Foreman", "Supervisor", "Total"], rows,
+                        total_row=["TOTAL", "–", num(f_sum), num(s_sum), num(f_sum + s_sum)],
+                        total_col=4,
+                    ),
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("No Foreman/Supervisor data for this scope yet.")
+
+            if planner:
+                st.write("")
+                st.markdown("**FTE Planner**")
+                st.markdown(
+                    theme.table_html(
+                        ["Position", "FTE"],
+                        [[r["posisi"], num(r["fte"])] for r in planner],
+                        total_row=["TOTAL", num(p_sum)], total_col=1,
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+    with s2:
+        with theme.card("staff_cost", "Staff cost",
+                        f"Foreman {rp_short(STAFF_COST_RATE['Foreman'], 1)} · "
+                        f"Supervisor {rp_short(STAFF_COST_RATE['Supervisor'], 1)} per month",
+                        accent=theme.BRAND["orange_deep"]):
+            st.plotly_chart(
+                charts.share_semicircle(
+                    ["Foreman", "Supervisor"], [f_cost, s_cost],
+                    [STAFF_COLORS["Foreman"], STAFF_COLORS["Supervisor"]],
+                    rp_short(staff_cost),
+                    f"{rp_short(staff_cost * MONTHS_PER_YEAR)} per year",
+                    height=300,
+                ),
+                width="stretch", config={"displayModeBar": False},
+            )
+            st.markdown(
+                theme.table_html(
+                    ["Role", "MPP", "Cost / month", "Cost / year"],
+                    [
+                        ["Foreman", num(f_sum), rp_short(f_cost),
+                         rp_short(f_cost * MONTHS_PER_YEAR)],
+                        ["Supervisor", num(s_sum), rp_short(s_cost),
+                         rp_short(s_cost * MONTHS_PER_YEAR)],
+                    ],
+                    total_row=["TOTAL", num(f_sum + s_sum), rp_short(staff_cost),
+                               rp_short(staff_cost * MONTHS_PER_YEAR)],
+                    total_col=3,
+                ),
+                unsafe_allow_html=True,
+            )
+            if planner:
+                st.markdown(
+                    theme.stat_list([
+                        ("Planner FTE", num(p_sum)),
+                        ("Planner cost", "not rated yet"),
+                    ]),
+                    unsafe_allow_html=True,
+                )
+
+
+# ---------------------------------------------------------------------------
+# Dashboard body shared by Basecase All Unit and Summary
+# ---------------------------------------------------------------------------
+def render_dashboard_body(summary: dict, cost: dict) -> dict:
+    mech_total = {m: sum(v.get(m, 0) for v in summary["mechanic_by_category"].values())
+                  for m in MONTH_COLS}
+    mech_total["Tot"] = sum(mech_total[m] for m in MONTH_COLS)
+    weld_total = summary["welder_total"]
+    elec_total = summary["electric_total"]
+
+    level_totals = {
+        m: mech_total.get(m, 0) + weld_total.get(m, 0) + elec_total.get(m, 0)
+        for m in MONTH_COLS
+    }
+    grand_total = sum(level_totals.values())
+    cost_total = cost["Total"]["Tot"]
+    head_counts = {"Mechanic": mech_total, "Electric": elec_total, "Welder": weld_total}
+
+    st.markdown(
+        theme.legend_strip(
+            "Role colours", ROLE_LEGEND + [("M1 senior → M3 junior", theme.LEVEL_SHADES["M2"])]
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # ---------------- KPI ----------------
+    k = st.columns(5, gap="small")
+    with k[0]:
+        st.markdown(
+            theme.kpi_card("Total MPP", num(grand_total), "",
+                           accent=theme.BRAND["navy"], emoji="👷"),
+            unsafe_allow_html=True,
+        )
+    with k[1]:
+        share = mech_total["Tot"] / grand_total * 100 if grand_total else 0
+        st.markdown(
+            theme.kpi_card("Mechanic", num(mech_total["Tot"]),
+                           f"<b>{num(share, 0)}%</b> of MPP", role="Mechanic"),
+            unsafe_allow_html=True,
+        )
+    with k[2]:
+        st.markdown(
+            theme.kpi_card("Electrician", num(elec_total["Tot"]),
+                           f"M1 <b>{num(elec_total['M1'])}</b> · M2 <b>{num(elec_total['M2'])}</b>",
+                           role="Electric"),
+            unsafe_allow_html=True,
+        )
+    with k[3]:
+        st.markdown(
+            theme.kpi_card("Welder", num(weld_total["Tot"]),
+                           f"M1 <b>{num(weld_total['M1'])}</b> · M2 <b>{num(weld_total['M2'])}</b>",
+                           role="Welder"),
+            unsafe_allow_html=True,
+        )
+    with k[4]:
+        per_fte = cost_total / grand_total if grand_total else 0
+        st.markdown(
+            theme.kpi_card("Cost per month", rp_short(cost_total),
+                           f"<b>{rp_short(per_fte)}</b> per MPP",
+                           accent=theme.BRAND["orange_deep"], emoji="💰", value_size=21),
+            unsafe_allow_html=True,
+        )
+
+    st.write("")
+
+    # ------- row 1: one merged section chart + level composition -------
+    # Baris ini dulu dua chart terpisah (total per section, lalu persebaran
+    # M1-M3 di bawahnya). Stacked chart sudah mencetak total di atas tiap
+    # batang, jadi keduanya cukup jadi satu chart.
+    r1a, r1b = st.columns([1.6, 1], gap="small")
+    with r1a:
+        with theme.card("total_section", "MPP & level split per section",
+                        f"{len(summary['mechanic_by_category'])} unit categories "
+                        f"+ 2 company-wide roles · bar height = section MPP",
+                        accent=theme.LEVEL_SHADES["M2"]):
+            st.plotly_chart(
+                charts.level_stack_by_section(
+                    summary["mechanic_by_category"], weld_total, elec_total, height=300),
+                width="stretch", config={"displayModeBar": False},
+            )
+            st.markdown(theme.legend_html(LEVEL_LEGEND), unsafe_allow_html=True)
+    with r1b:
+        with theme.card("level_donut", "M1 – M3 composition", "all roles",
+                        accent=theme.LEVEL_SHADES["M1"]):
+            st.plotly_chart(charts.level_donut(level_totals, height=311), width="stretch",
+                            config={"displayModeBar": False})
+
+    # ------- row 2: monthly cost + yearly cost, identical shape -------
+    c1, c2 = st.columns(2, gap="small")
+    with c1:
+        render_cost_block("cost_month", "Cost per month", "colour = share per role",
+                          cost, head_counts, grand_total, 1, "per MPP / month")
+    with c2:
+        render_cost_block("cost_year", "Cost per year", f"monthly × {MONTHS_PER_YEAR}",
+                          cost, head_counts, grand_total, MONTHS_PER_YEAR, "per MPP / year")
+
+    return {
+        "mech_total": mech_total, "weld_total": weld_total, "elec_total": elec_total,
+        "grand_total": grand_total, "cost_total": cost_total,
+    }
 
 
 def render_summary_tab(summary, mech_total, weld_total, elec_total, cost):
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("**FTE per Kategori & Role**")
-        # Kategori mekanik + Electrician + Welder digabung satu tabel — sebelumnya
-        # Welder/Electrician ada di tabel terpisah di bawah, padahal keduanya sama-sama
-        # "baris company-wide" seperti yang sudah dilakukan di tabel Cost per level.
+        st.markdown("**MPP per category & role**")
         rows = [
             [cat, num(v["M1"]), num(v["M2"]), num(v["M3"]), num(v["Tot"])]
             for cat, v in summary["mechanic_by_category"].items()
@@ -185,7 +630,7 @@ def render_summary_tab(summary, mech_total, weld_total, elec_total, cost):
         if rows:
             st.markdown(
                 theme.table_html(
-                    ["Kategori / Role", "M1", "M2", "M3", "Total"], rows,
+                    ["Category / role", "M1", "M2", "M3", "Total"], rows,
                     total_row=["TOTAL", num(grand["M1"]), num(grand["M2"]),
                                num(grand["M3"]), num(grand["Tot"])],
                     total_col=4,
@@ -193,7 +638,7 @@ def render_summary_tab(summary, mech_total, weld_total, elec_total, cost):
                 unsafe_allow_html=True,
             )
         else:
-            st.info("Tidak ada data untuk site ini.")
+            st.info("No data for this scope.")
     with c2:
         st.markdown("**Cost per level**")
         rows = []
@@ -215,80 +660,6 @@ def render_summary_tab(summary, mech_total, weld_total, elec_total, cost):
         )
 
 
-def render_operational_tab(operational):
-    if not operational:
-        st.info(
-            "Belum ada data Foreman/Supervisor untuk site ini. "
-            "Lengkapi kolom Area Kerja, Beban Admin, dan Jam Efektif di sheet "
-            "**Hasil Staff** untuk site ini."
-        )
-        return
-    rows, f_sum, s_sum = [], 0, 0
-    for r in operational:
-        tot = r["foreman"] + r["supervisor"]
-        rows.append([r["posisi"], num(r["jumlah_mekanik"]), num(r["foreman"]),
-                     num(r["supervisor"]), num(tot)])
-        f_sum += r["foreman"]
-        s_sum += r["supervisor"]
-    st.markdown(
-        theme.table_html(
-            ["Posisi", "Mekanik M1", "Foreman", "Supervisor", "Total"], rows,
-            total_row=["TOTAL", "–", num(f_sum), num(s_sum), num(f_sum + s_sum)],
-            total_col=4,
-        ),
-        unsafe_allow_html=True,
-    )
-
-
-def render_planner_tab(planner):
-    if not planner:
-        st.info("Belum ada data FTE Planner untuk site ini.")
-        return
-    rows = [[r["posisi"], num(r["fte"])] for r in planner]
-    st.markdown(
-        theme.table_html(
-            ["Posisi", "FTE"], rows,
-            total_row=["TOTAL", num(sum(r["fte"] for r in planner))], total_col=1,
-        ),
-        unsafe_allow_html=True,
-    )
-
-
-def render_detail_tab(summary):
-    rows = []
-    for d in summary["detail_rows"]:
-        raw = d["raw"]
-        rows.append({
-            "Category": d["category"],
-            "Jenis Unit": d["jenis_unit"],
-            "Jumlah Unit": d["jumlah_unit"],
-            "PA": d["pa"],
-            "Mech M1": round(raw["Mechanic"]["M1"], 3),
-            "Mech M2": round(raw["Mechanic"]["M2"], 3),
-            "Mech M3": round(raw["Mechanic"]["M3"], 3),
-            "Elec M1": round(raw["Electric"]["M1"], 3),
-            "Elec M2": round(raw["Electric"]["M2"], 3),
-            "Weld M1": round(raw["Welder"]["M1"], 3),
-            "Weld M2": round(raw["Welder"]["M2"], 3),
-        })
-    st.caption("Nilai mentah per baris unit, sebelum pembulatan di level total.")
-    if rows:
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=340)
-    else:
-        st.info("Tidak ada baris unit yang berhasil dihitung.")
-
-    if summary["skipped_units"]:
-        with st.expander(
-            f"{len(summary['skipped_units'])} baris unit dilewati — Sub Category "
-            f"belum terdaftar di BACKEND"
-        ):
-            st.dataframe(
-                pd.DataFrame(summary["skipped_units"],
-                             columns=["Category", "Jenis Unit", "Alasan"]),
-                width="stretch", hide_index=True,
-            )
-
-
 def render_unit_tab(site: str):
     df = st.session_state.working_units_df
     total_rows = len(df)
@@ -300,35 +671,35 @@ def render_unit_tab(site: str):
     head, lock = st.columns([6, 1.2])
     with head:
         st.caption(
-            f"{total_rows} baris unit untuk site **{site}**, otomatis dari Sheet9 — "
-            f"halaman {st.session_state.page_num + 1} dari {total_pages}."
+            f"{total_rows} unit rows for site **{site}**, pulled from Sheet9 — "
+            f"page {st.session_state.page_num + 1} of {total_pages}."
         )
     with lock:
         with st.popover("Edit", width="stretch"):
             if st.session_state.get("edit_unlocked"):
-                st.success("Mode edit aktif untuk sesi ini.")
-                st.caption("Perubahan tidak tersimpan ke spreadsheet dan hilang saat halaman dimuat ulang.")
-                if st.button("Kunci kembali", width="stretch"):
+                st.success("Edit mode active for this session.")
+                st.caption("Changes are not written back to the spreadsheet and are lost on reload.")
+                if st.button("Lock again", width="stretch"):
                     st.session_state.edit_unlocked = False
                     st.rerun()
-                if st.button("Kembalikan ke data asli", width="stretch"):
+                if st.button("Reset to source data", width="stretch"):
                     st.session_state.working_units_df = units_to_df(get_units().get(site, []))
                     st.rerun()
             else:
                 pwd = st.text_input("Password", type="password", key="edit_pwd_input")
-                if st.button("Buka mode edit", width="stretch"):
+                if st.button("Unlock edit mode", width="stretch"):
                     if pwd == UNIT_EDIT_PASSWORD:
                         st.session_state.edit_unlocked = True
                         st.rerun()
                     else:
-                        st.error("Password tidak cocok.")
+                        st.error("Wrong password.")
 
     if st.session_state.get("edit_unlocked"):
         edited = st.data_editor(
             page_df, num_rows="fixed", width="stretch",
             key=f"editor_{site}_{st.session_state.page_num}",
             column_config={
-                "Jumlah Unit": st.column_config.NumberColumn("Jumlah Unit", min_value=0, step=1),
+                "Jumlah Unit": st.column_config.NumberColumn("Unit Count", min_value=0, step=1),
                 "PA": st.column_config.NumberColumn("PA (%)", min_value=1, max_value=100, step=1),
             },
         )
@@ -339,12 +710,12 @@ def render_unit_tab(site: str):
 
     p1, p2, _ = st.columns([1, 1, 5])
     with p1:
-        if st.button("← Sebelumnya", disabled=st.session_state.page_num <= 0,
+        if st.button("← Previous", disabled=st.session_state.page_num <= 0,
                      width="stretch", key="bc_prev"):
             st.session_state.page_num -= 1
             st.rerun()
     with p2:
-        if st.button("Berikutnya →", disabled=st.session_state.page_num >= total_pages - 1,
+        if st.button("Next →", disabled=st.session_state.page_num >= total_pages - 1,
                      width="stretch", key="bc_next"):
             st.session_state.page_num += 1
             st.rerun()
@@ -356,9 +727,9 @@ def render_unit_tab(site: str):
 def render_calculator_mode(backend):
     st.markdown(
         theme.header_band(
-            "Kalkulator FTE — Satu Jenis Unit",
-            "Hitung cepat kebutuhan tenaga kerja untuk satu jenis equipment",
-            chips=["Mode <b>Kalkulator</b>"],
+            "FTE Calculator — Single Unit Type",
+            "Quick manpower estimate for one equipment type",
+            chips=["Mode <b>Calculator</b>"],
         ),
         unsafe_allow_html=True,
     )
@@ -370,19 +741,19 @@ def render_calculator_mode(backend):
     # Empat input utama berjajar dalam satu baris, competency factor di baris
     # sendiri (butuh lebar untuk track slider), lalu catatan jarak + tombol.
     # Hasil perhitungan menyusul DI BAWAH kartu ini, bukan di sampingnya.
-    with theme.card("calc_param", "Parameter", "semua kolom wajib"):
+    with theme.card("calc_param", "Parameters", "all fields required"):
         p1, p2, p3, p4 = st.columns(4, gap="medium")
         with p1:
             site = st.selectbox("Site", options=sites, index=None,
-                                placeholder="Pilih site…", key="calc1_site")
+                                placeholder="Select site…", key="calc1_site")
         with p2:
-            sub_category = st.selectbox("Jenis equipment", options=sub_cats, index=None,
-                                        placeholder="Pilih sub category…", key="calc1_subcat")
+            sub_category = st.selectbox("Equipment type", options=sub_cats, index=None,
+                                        placeholder="Select sub category…", key="calc1_subcat")
         with p3:
-            jumlah_unit = st.number_input("Jumlah unit", min_value=0.0, value=1.0,
+            jumlah_unit = st.number_input("Unit count", min_value=0.0, value=1.0,
                                           step=1.0, key="calc1_jml")
         with p4:
-            pa = st.number_input("Target PA (%)", min_value=1.0, max_value=100.0,
+            pa = st.number_input("PA target (%)", min_value=1.0, max_value=100.0,
                                  value=85.0, step=1.0, key="calc1_pa")
 
         cf = st.slider("Competency factor", min_value=0.1, max_value=1.0,
@@ -394,8 +765,8 @@ def render_calculator_mode(backend):
             if site and jarak_km is None:
                 st.markdown(
                     theme.inline_note(
-                        f"Jarak untuk site <b>{site}</b> belum tersedia. "
-                        f"Perhitungan tidak bisa dijalankan sampai data itu diisi.",
+                        f"No distance on record for site <b>{site}</b>. "
+                        f"The calculation cannot run until that value exists.",
                         warn=True,
                     ),
                     unsafe_allow_html=True,
@@ -403,19 +774,19 @@ def render_calculator_mode(backend):
             elif jarak_km is not None:
                 st.markdown(
                     theme.inline_note(
-                        f"Jarak area kerja site {site}: <b>{num(jarak_km, 2)} km</b>"
+                        f"Work area distance for site {site}: <b>{num(jarak_km, 2)} km</b>"
                     ),
                     unsafe_allow_html=True,
                 )
             else:
                 st.markdown(
-                    theme.inline_note("Pilih site dan jenis equipment untuk mengaktifkan perhitungan."),
+                    theme.inline_note("Select a site and equipment type to enable the calculation."),
                     unsafe_allow_html=True,
                 )
         with n2:
             with st.container(key="calc_go"):
                 compute_clicked = st.button(
-                    "Hitung FTE", width="stretch", key="calc1_button",
+                    "Calculate FTE", width="stretch", key="calc1_button",
                     disabled=not (site and sub_category and jarak_km is not None),
                 )
 
@@ -431,7 +802,7 @@ def render_calculator_mode(backend):
                 backend,
             )
         except CalculationError as exc:
-            st.error(f"Perhitungan gagal: {exc}")
+            st.error(f"Calculation failed: {exc}")
             st.session_state.calc1_result = None
         st.rerun()
 
@@ -442,8 +813,8 @@ def render_calculator_mode(backend):
     if not result:
         st.markdown(
             theme.empty_state(
-                "Belum ada hasil",
-                "Lengkapi parameter di atas, lalu tekan Hitung FTE.",
+                "No result yet",
+                "Fill in the parameters above, then press Calculate FTE.",
                 "🧮",
             ),
             unsafe_allow_html=True,
@@ -457,7 +828,7 @@ def render_calculator_mode(backend):
     r1, r2, r3 = st.columns([1, 1.12, 1.24], gap="medium")
 
     with r1:
-        with theme.card("calc_donut", "Sebaran per role", "share tiap role",
+        with theme.card("calc_donut", "Split per role", "share of each role",
                         accent=theme.ROLE_COLORS["Mechanic"]):
             st.plotly_chart(
                 charts.role_donut(result["fte"], height=177, show_legend=False),
@@ -481,7 +852,7 @@ def render_calculator_mode(backend):
         # electrician + welder digabung) — rincian per role sudah ada di panel
         # sebelahnya, jadi readout cukup menjawab "berapa orang dan berapa
         # biayanya di tiap level".
-        with theme.card("calc_out", "Hasil kalkulator", "total lintas role",
+        with theme.card("calc_out", "Calculator result", "total across all roles",
                         accent=theme.BRAND["orange_deep"]):
             st.markdown(
                 theme.calc_readout(
@@ -490,14 +861,14 @@ def render_calculator_mode(backend):
                         (m, theme.LEVEL_NOTE[m], num(tot[m]), rp(cost_lv[m]))
                         for m in MONTH_COLS
                     ],
-                    grand_label="Estimasi cost<br/>per bulan",
+                    grand_label="Estimated cost<br/>per month",
                     grand_value=rp(cost_lv["Tot"]),
                 ),
                 unsafe_allow_html=True,
             )
 
     with r3:
-        with theme.card("calc_table", "Rincian per role", "FTE per level"):
+        with theme.card("calc_table", "Breakdown per role", "FTE per level"):
             rows, sums = [], {"M1": 0.0, "M2": 0.0, "M3": 0.0, "Tot": 0.0}
             for role in ("Mechanic", "Electric", "Welder"):
                 v = result["fte"][role]
@@ -516,7 +887,7 @@ def render_calculator_mode(backend):
             )
             st.markdown(
                 theme.stat_list([
-                    (f"Cost {theme.ROLE_LABEL[role]}", rp(result["cost"][role]["Tot"]))
+                    (f"Cost · {theme.ROLE_LABEL[role]}", rp(result["cost"][role]["Tot"]))
                     for role in ("Mechanic", "Electric", "Welder")
                 ]),
                 unsafe_allow_html=True,
@@ -524,45 +895,79 @@ def render_calculator_mode(backend):
 
 
 # ===========================================================================
-# Mode: Basecase
+# Mode: Basecase All Unit  /  Summary
 # ===========================================================================
 def render_basecase_sidebar(backend):
-    st.sidebar.markdown('<div class="dh-side-label">Parameter site</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="dh-side-label">Site parameters</div>',
+                        unsafe_allow_html=True)
     site = st.sidebar.selectbox("Site", options=(backend.sites or []), index=None,
-                               placeholder="Pilih site…", key="bc_site")
+                                placeholder="Select site…", key="bc_site")
     cf = st.sidebar.slider("Competency factor", min_value=0.1, max_value=1.0,
                            value=0.6, step=0.01, key="bc_cf")
 
     c1, c2 = st.sidebar.columns(2)
     with c1:
         with st.container(key="sb_refresh"):
-            refresh = st.button("Muat ulang", width="stretch", key="sb_refresh_btn")
+            refresh = st.button("Reload", width="stretch", key="sb_refresh_btn")
     with c2:
         with st.container(key="sb_compute"):
-            compute = st.button("Hitung FTE", width="stretch",
+            compute = st.button("Calculate", width="stretch",
                                 disabled=site is None, key="sb_compute_btn")
 
     return site, cf, refresh, compute
+
+
+def render_summary_sidebar():
+    st.sidebar.markdown('<div class="dh-side-label">Summary parameters</div>',
+                        unsafe_allow_html=True)
+    cf = st.sidebar.slider("Competency factor", min_value=0.1, max_value=1.0,
+                           value=0.6, step=0.01, key="sm_cf")
+    c1, c2 = st.sidebar.columns(2)
+    with c1:
+        with st.container(key="sm_refresh"):
+            refresh = st.button("Reload", width="stretch", key="sm_refresh_btn")
+    with c2:
+        with st.container(key="sm_compute"):
+            compute = st.button("Calculate", width="stretch", key="sm_compute_btn")
+    return cf, refresh, compute
+
+
+def _clear_caches():
+    get_backend.clear()
+    get_units.clear()
+    get_staff.clear()
+    for k in list(st.session_state.keys()):
+        if k.startswith("_allsites_"):
+            del st.session_state[k]
+
+
+def render_details_section(tab_specs: list):
+    """Collapsed "Details" block — same idea as the parameters panel above.
+
+    These used to be permanently visible tabs, which pushed the dashboard
+    itself off the first screen. Now nothing renders until it is opened.
+    """
+    with st.container(key="detail_panel"):
+        with st.expander("Details", expanded=False):
+            tabs = st.tabs([label for label, _fn in tab_specs])
+            for tab, (_label, fn) in zip(tabs, tab_specs):
+                with tab:
+                    fn()
 
 
 def render_basecase_mode(backend):
     site, cf, refresh, compute_clicked = render_basecase_sidebar(backend)
 
     if refresh:
-        get_backend.clear()
-        get_units.clear()
-        get_staff.clear()
-        for k in list(st.session_state.keys()):
-            if k.startswith("_cost_scale_"):
-                del st.session_state[k]
+        _clear_caches()
         st.rerun()
 
     if site is None:
         st.markdown(
             theme.header_band(
-                "Basecase FTE per Site",
-                "Kebutuhan tenaga kerja seluruh unit dalam satu site",
-                chips=["Site <b>belum dipilih</b>"],
+                "Basecase All Unit",
+                "Manpower requirement for every unit within one site",
+                chips=["Site <b>not selected</b>"],
             ),
             unsafe_allow_html=True,
         )
@@ -570,8 +975,8 @@ def render_basecase_mode(backend):
         st.session_state.calc_result = None
         st.markdown(
             theme.empty_state(
-                "Pilih site untuk mulai",
-                "Tentukan site dan competency factor di panel kiri, lalu tekan Hitung FTE.",
+                "Pick a site to start",
+                "Choose a site and competency factor in the left panel, then press Calculate.",
                 "📍",
             ),
             unsafe_allow_html=True,
@@ -581,7 +986,7 @@ def render_basecase_mode(backend):
     try:
         units_all = get_units()
     except BackendDataError as exc:
-        st.error(f"Data unit (Sheet9) gagal dimuat: {exc}")
+        st.error(f"Unit data (Sheet9) failed to load: {exc}")
         return
 
     if st.session_state.get("current_site") != site:
@@ -606,23 +1011,22 @@ def render_basecase_mode(backend):
             )
             st.session_state.calc_result = {"summary": summary, "staff": staff_res, "cost": cost}
         except CalculationError as exc:
-            st.error(f"Perhitungan gagal: {exc}")
+            st.error(f"Calculation failed: {exc}")
             st.session_state.calc_result = None
         except BackendDataError as exc:
-            st.error(f"Data Hasil Staff gagal dimuat: {exc}")
+            st.error(f"Staff data failed to load: {exc}")
             st.session_state.calc_result = None
 
     result = st.session_state.get("calc_result")
 
-    # ---------------- header ----------------
     jarak = backend.jarak.get(site)
     chips = [f"Site <b>{site}</b>", f"Competency factor <b>{num(cf, 2)}</b>"]
     if jarak is not None:
-        chips.append(f"Jarak <b>{num(jarak, 1)} km</b>")
+        chips.append(f"Distance <b>{num(jarak, 1)} km</b>")
     st.markdown(
         theme.header_band(
-            f"Basecase FTE — Site {site}",
-            "Kebutuhan tenaga kerja seluruh unit dalam satu site",
+            f"Basecase All Unit — {site}",
+            "Manpower requirement for every unit within one site",
             chips=chips,
         ),
         unsafe_allow_html=True,
@@ -631,162 +1035,120 @@ def render_basecase_mode(backend):
     if not result:
         st.markdown(
             theme.empty_state(
-                f"Site {site} siap dihitung",
-                f"{len(st.session_state.working_units_df)} baris unit sudah termuat. "
-                f"Tekan Hitung FTE di panel kiri untuk menampilkan dashboard.",
+                f"Site {site} is ready",
+                f"{len(st.session_state.working_units_df)} unit rows loaded. "
+                f"Press Calculate in the left panel to build the dashboard.",
                 "▶️",
             ),
             unsafe_allow_html=True,
         )
-        with st.expander(f"Lihat data unit site {site}"):
+        with st.expander(f"View unit data for site {site}"):
             render_unit_tab(site)
         return
 
     summary, staff_res, cost = result["summary"], result["staff"], result["cost"]
+    unit_qty = sum(d["jumlah_unit"] for d in summary["detail_rows"])
 
-    mech_total = {m: sum(v.get(m, 0) for v in summary["mechanic_by_category"].values())
-                  for m in MONTH_COLS}
-    mech_total["Tot"] = sum(mech_total[m] for m in MONTH_COLS)
-    weld_total = summary["welder_total"]
-    elec_total = summary["electric_total"]
+    render_formula_panel(
+        formula_items(backend, unit_qty, site=site),
+        summary["detail_rows"], with_site=False, skipped=summary["skipped_units"],
+    )
+    totals = render_dashboard_body(summary, cost)
+    render_staff_section(staff_res["operational"], staff_res["planner"])
 
-    level_totals = {
-        m: mech_total.get(m, 0) + weld_total.get(m, 0) + elec_total.get(m, 0)
-        for m in MONTH_COLS
-    }
-    grand_total = sum(level_totals.values())
-    cost_total = cost["Total"]["Tot"]
+    render_details_section([
+        ("MPP summary", lambda: render_summary_tab(
+            summary, totals["mech_total"], totals["weld_total"],
+            totals["elec_total"], cost)),
+        (f"Unit data ({len(st.session_state.working_units_df)})",
+         lambda: render_unit_tab(site)),
+    ])
+
+
+def render_summary_mode(backend):
+    cf, refresh, compute_clicked = render_summary_sidebar()
+
+    if refresh:
+        _clear_caches()
+        st.rerun()
+
+    try:
+        units_all = get_units()
+    except BackendDataError as exc:
+        st.error(f"Unit data (Sheet9) failed to load: {exc}")
+        return
+
+    if compute_clicked:
+        st.session_state.pop(f"_allsites_{cf:.2f}", None)
+        st.session_state.summary_ready = True
 
     st.markdown(
-        theme.legend_strip(
-            "Warna role", ROLE_LEGEND + [("M1 senior → M3 junior", theme.LEVEL_SHADES["M2"])]
+        theme.header_band(
+            "Summary — All Sites",
+            "Every unit across every site, rolled up into one view",
+            chips=[f"Competency factor <b>{num(cf, 2)}</b>",
+                   f"Sites <b>{len(backend.sites or [])}</b>"],
         ),
         unsafe_allow_html=True,
     )
 
-    # ---------------- KPI ----------------
-    k = st.columns(5, gap="small")
-    with k[0]:
+    if not st.session_state.get("summary_ready"):
         st.markdown(
-            theme.kpi_card(
-                "Tot Mec Needs", num(grand_total),
-                "",
-                accent=theme.BRAND["navy"], emoji="👷",
+            theme.empty_state(
+                "Ready to aggregate",
+                "Set the competency factor in the left panel, then press Calculate. "
+                "Every site is computed individually and the results are summed.",
+                "🗺️",
             ),
             unsafe_allow_html=True,
         )
-    with k[1]:
-        share = mech_total["Tot"] / grand_total * 100 if grand_total else 0
+        return
+
+    with st.spinner("Calculating every site…"):
+        agg = aggregate_all_sites(backend, units_all, cf)
+
+    if not agg:
         st.markdown(
-            theme.kpi_card("Mekanik", num(mech_total["Tot"]),
-                           f"<b>{num(share, 0)}%</b> dari MPP", role="Mechanic"),
+            theme.empty_state(
+                "Nothing to aggregate",
+                "No site produced a usable result. Check the unit data on Sheet9.",
+                "⚠️",
+            ),
             unsafe_allow_html=True,
         )
-    with k[2]:
+        return
+
+    summary, cost = agg["summary"], agg["cost"]
+    unit_qty = sum(d["jumlah_unit"] for d in summary["detail_rows"])
+
+    render_formula_panel(
+        formula_items(backend, unit_qty),
+        summary["detail_rows"], with_site=True, skipped=summary["skipped_units"],
+    )
+    totals = render_dashboard_body(summary, cost)
+    render_staff_section(agg["operational"], agg["planner"])
+
+    def _per_site_table():
+        rows = [[s, rp_short(v), rp_short(v * MONTHS_PER_YEAR)]
+                for s, v in sorted(agg["per_site_cost"].items(),
+                                   key=lambda kv: kv[1], reverse=True)]
+        total_m = sum(agg["per_site_cost"].values())
         st.markdown(
-            theme.kpi_card("Electrician", num(elec_total["Tot"]),
-                           f"M1 <b>{num(elec_total['M1'])}</b> · M2 <b>{num(elec_total['M2'])}</b>",
-                           role="Electric"),
+            theme.table_html(
+                ["Site", "Cost / month", "Cost / year"], rows,
+                total_row=["TOTAL", rp_short(total_m),
+                           rp_short(total_m * MONTHS_PER_YEAR)],
+                total_col=2,
+            ),
             unsafe_allow_html=True,
         )
-    with k[3]:
-        st.markdown(
-            theme.kpi_card("Welder", num(weld_total["Tot"]),
-                           f"M1 <b>{num(weld_total['M1'])}</b> · M2 <b>{num(weld_total['M2'])}</b>",
-                           role="Welder"),
-            unsafe_allow_html=True,
-        )
-    with k[4]:
-        per_fte = cost_total / grand_total if grand_total else 0
-        st.markdown(
-            theme.kpi_card("Cost per bulan", rp_short(cost_total),
-                           f"<b>{rp_short(per_fte)}</b> per MPP",
-                           accent=theme.BRAND["orange_deep"], emoji="💰", value_size=21),
-            unsafe_allow_html=True,
-        )
 
-    st.write("")
-
-    # ---------------- baris 1: total + komposisi level ----------------
-    r1a, r1b = st.columns([1.6, 1], gap="small")
-    with r1a:
-        with theme.card("total_section", "MPP per Section",
-                        f"{len(summary['mechanic_by_category'])} kategori unit + 2 role company-wide"):
-            st.plotly_chart(
-                charts.total_by_section_bar(summary["mechanic_by_category"], weld_total, elec_total),
-                width="stretch", config={"displayModeBar": False},
-            )
-    with r1b:
-        with theme.card("level_donut", "Komposisi M1 – M3", "seluruh role",
-                        accent=theme.LEVEL_SHADES["M1"]):
-            st.plotly_chart(charts.level_donut(level_totals), width="stretch",
-                            config={"displayModeBar": False})
-
-    # ---------------- baris 2: persebaran level + cost ----------------
-    r2a, r2b = st.columns([1.6, 1], gap="small")
-    scale = site_cost_scale(backend, units_all, cf)
-    values = list(scale.values()) or [cost_total]
-    scale_max = max(values)
-    avg = sum(values) / len(values)
-    top_site = max(scale, key=scale.get) if scale else None
-
-    with r2a:
-        with theme.card("level_stack", "Persebaran M1 – M3 per Section",
-                        "batang bertumpuk, tinggi total = FTE section",
-                        accent=theme.LEVEL_SHADES["M2"]):
-            st.plotly_chart(
-                charts.level_stack_by_section(summary["mechanic_by_category"], weld_total, elec_total),
-                width="stretch", config={"displayModeBar": False},
-            )
-            st.markdown(theme.legend_html(LEVEL_LEGEND), unsafe_allow_html=True)
-            # Tabel FTE + cost per role dipindah ke kolom KIRI, menempel di
-            # bawah chart. Sebelumnya tabel ini ada di kartu gauge dan menimpa
-            # keterangan skala busur; di sini ia juga membuat tinggi kedua
-            # kolom jauh lebih seimbang.
-            st.write("")
-            rows = [
-                [theme.ROLE_LABEL[r],
-                 num({"Mechanic": mech_total, "Electric": elec_total, "Welder": weld_total}[r]["Tot"]),
-                 rp_short(cost.get(r, {}).get("Tot", 0))]
-                for r in ("Mechanic", "Electric", "Welder")
-            ]
-            st.markdown(
-                theme.table_html(
-                    ["Role", "FTE", "Cost / bulan"], rows,
-                    total_row=["TOTAL", num(grand_total), rp_short(cost_total)], total_col=2,
-                ),
-                unsafe_allow_html=True,
-            )
-    with r2b:
-        with theme.card("cost_gauge", "Estimasi Cost per Bulan",
-                        "arahkan mouse ke busur untuk rincian role", accent=theme.BRAND["orange_deep"]):
-            st.plotly_chart(charts.cost_gauge(cost, scale_max, avg, top_site, height=300),
-                            width="stretch", config={"displayModeBar": False})
-            st.markdown(charts.cost_gauge_caption(scale_max, avg, top_site), unsafe_allow_html=True)
-            st.markdown(
-                theme.stat_list([
-                    ("Cost per MPP", rp_short(cost_total / grand_total if grand_total else 0)),
-                    ("Rata-rata antar-site", rp_short(avg)),
-                    ("Site termahal", f"{top_site} · {rp_short(scale_max)}" if top_site else "–"),
-                ]),
-                unsafe_allow_html=True,
-            )
-
-    # ---------------- rincian ----------------
-    tabs = st.tabs([
-        "Ringkasan FTE", "Foreman & Supervisor", "FTE Planner",
-        f"Data Unit ({len(st.session_state.working_units_df)})", "Detail per Unit",
+    render_details_section([
+        ("MPP summary", lambda: render_summary_tab(
+            summary, totals["mech_total"], totals["weld_total"],
+            totals["elec_total"], cost)),
+        ("Cost per site", _per_site_table),
     ])
-    with tabs[0]:
-        render_summary_tab(summary, mech_total, weld_total, elec_total, cost)
-    with tabs[1]:
-        render_operational_tab(staff_res["operational"])
-    with tabs[2]:
-        render_planner_tab(staff_res["planner"])
-    with tabs[3]:
-        render_unit_tab(site)
-    with tabs[4]:
-        render_detail_tab(summary)
 
 
 # ===========================================================================
@@ -795,10 +1157,10 @@ def main():
         backend = get_backend()
     except BackendDataError as exc:
         st.markdown(
-            theme.header_band("FTE Calculator", "PT Dharma Henwa"),
+            theme.header_band("FTE Calculator", "PT Darma Henwa"),
             unsafe_allow_html=True,
         )
-        st.error(f"Data BACKEND gagal dimuat: {exc}")
+        st.error(f"BACKEND data failed to load: {exc}")
         return
 
     st.session_state.setdefault("app_mode", "calculator")
@@ -809,28 +1171,31 @@ def main():
         st.markdown(
             f'<div class="dh-side-brand">{mark}'
             f'<div><div class="title">FTE Calculator</div>'
-            f'<div class="subtitle">PT Dharma Henwa</div></div></div>',
+            f'<div class="subtitle">PT Darma Henwa</div></div></div>',
             unsafe_allow_html=True,
         )
         st.markdown('<div class="dh-side-label">Mode</div>', unsafe_allow_html=True)
-        with st.container(key="nav_calc"):
-            if st.button("Kalkulator", width="stretch", key="btn_mode_calc",
-                         type="primary" if st.session_state.app_mode == "calculator" else "secondary"):
-                st.session_state.app_mode = "calculator"
-                st.rerun()
-        with st.container(key="nav_basecase"):
-            if st.button("Basecase per Site", width="stretch", key="btn_mode_multisite",
-                         type="primary" if st.session_state.app_mode == "multisite" else "secondary"):
-                st.session_state.app_mode = "multisite"
-                st.rerun()
+        for key, label, container in (
+            ("calculator", "Calculator", "nav_calc"),
+            ("multisite", "Basecase All Unit", "nav_basecase"),
+            ("summary", "Summary", "nav_summary"),
+        ):
+            with st.container(key=container):
+                if st.button(label, width="stretch", key=f"btn_mode_{key}",
+                             type="primary" if st.session_state.app_mode == key else "secondary"):
+                    st.session_state.app_mode = key
+                    st.rerun()
 
     if st.session_state.app_mode == "calculator":
         render_calculator_mode(backend)
+    elif st.session_state.app_mode == "summary":
+        render_summary_mode(backend)
     else:
         render_basecase_mode(backend)
 
     if DEMO:
-        st.caption("Mode demo: data contoh bawaan, bukan Google Sheets. Jalankan tanpa FTE_DEMO=1 untuk data asli.")
+        st.caption("Demo mode: bundled sample data, not Google Sheets. "
+                   "Run without FTE_DEMO=1 for live data.")
 
 
 if __name__ == "__main__":
