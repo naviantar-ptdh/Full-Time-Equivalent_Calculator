@@ -41,6 +41,12 @@ COST_RATE = {
     "M3": 6_500_000,
 }
 
+# Cost rate per staff FTE (Rp) - asumsi manual dari user, bukan dari BACKEND
+STAFF_COST_RATE = {
+    "Foreman": 11_500_000,
+    "Supervisor": 13_000_000,
+}
+
 ROLES = ["Mechanic", "Electric", "Welder"]
 MONTH_COLS = ["M1", "M2", "M3"]
 
