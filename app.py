@@ -320,8 +320,7 @@ def unit_list_df(detail_rows: list, with_site: bool = False) -> pd.DataFrame:
 def render_formula_panel(items: list, detail_rows: list, with_site: bool = False,
                          skipped: list | None = None):
     with st.container(key="param_panel"):
-        with st.expander("⚙️  Formula parameters & unit list  —  click to open",
-                         expanded=False):
+        with st.expander("Formula parameters & unit list", expanded=False):
             st.markdown(
                 '<p class="dh-secnote">These four inputs drive the manpower '
                 'formula. The table below lists every unit the numbers are '
@@ -398,6 +397,7 @@ def render_cost_block(key: str, title: str, sub: str, cost: dict, head_counts: d
 STAFF_COLORS = {
     "Foreman": theme.BRAND["orange"],
     "Supervisor": theme.BRAND["navy"],
+    "Planner": theme.BRAND["amber"],
 }
 
 
@@ -412,7 +412,8 @@ def render_staff_section(operational: list, planner: list):
     st.write("")
     st.markdown(
         theme.legend_strip("Staff", [("Foreman", STAFF_COLORS["Foreman"]),
-                                     ("Supervisor", STAFF_COLORS["Supervisor"])]),
+                                     ("Supervisor", STAFF_COLORS["Supervisor"]),
+                                     ("Planner", STAFF_COLORS["Planner"])]),
         unsafe_allow_html=True,
     )
 
@@ -432,7 +433,9 @@ def render_staff_section(operational: list, planner: list):
     p_sum = sum(r["fte"] for r in planner)
     f_cost = f_sum * STAFF_COST_RATE["Foreman"]
     s_cost = s_sum * STAFF_COST_RATE["Supervisor"]
-    staff_cost = f_cost + s_cost
+    # Planner memakai tarif yang sama dengan Foreman.
+    p_cost = p_sum * STAFF_COST_RATE["Planner"]
+    staff_cost = f_cost + s_cost + p_cost
 
     s1, s2 = st.columns([1.6, 1], gap="small")
 
@@ -471,16 +474,17 @@ def render_staff_section(operational: list, planner: list):
 
     with s2:
         with theme.card("staff_cost", "Staff cost",
-                        f"Foreman {rp_short(STAFF_COST_RATE['Foreman'], 1)} · "
+                        f"Foreman & Planner {rp_short(STAFF_COST_RATE['Foreman'], 1)} · "
                         f"Supervisor {rp_short(STAFF_COST_RATE['Supervisor'], 1)} per month",
                         accent=theme.BRAND["orange_deep"]):
             st.plotly_chart(
                 charts.share_semicircle(
-                    ["Foreman", "Supervisor"], [f_cost, s_cost],
-                    [STAFF_COLORS["Foreman"], STAFF_COLORS["Supervisor"]],
+                    ["Foreman", "Supervisor", "Planner"], [f_cost, s_cost, p_cost],
+                    [STAFF_COLORS["Foreman"], STAFF_COLORS["Supervisor"],
+                     STAFF_COLORS["Planner"]],
                     rp_short(staff_cost),
                     f"{rp_short(staff_cost * MONTHS_PER_YEAR)} per year",
-                    height=300,
+                    height=355,
                 ),
                 width="stretch", config={"displayModeBar": False},
             )
@@ -492,21 +496,16 @@ def render_staff_section(operational: list, planner: list):
                          rp_short(f_cost * MONTHS_PER_YEAR)],
                         ["Supervisor", num(s_sum), rp_short(s_cost),
                          rp_short(s_cost * MONTHS_PER_YEAR)],
+                        ["Planner", num(p_sum), rp_short(p_cost),
+                         rp_short(p_cost * MONTHS_PER_YEAR)],
                     ],
-                    total_row=["TOTAL", num(f_sum + s_sum), rp_short(staff_cost),
+                    total_row=["TOTAL", num(f_sum + s_sum + p_sum), rp_short(staff_cost),
                                rp_short(staff_cost * MONTHS_PER_YEAR)],
                     total_col=3,
                 ),
                 unsafe_allow_html=True,
             )
-            if planner:
-                st.markdown(
-                    theme.stat_list([
-                        ("Planner FTE", num(p_sum)),
-                        ("Planner cost", "not rated yet"),
-                    ]),
-                    unsafe_allow_html=True,
-                )
+
 
 
 # ---------------------------------------------------------------------------
