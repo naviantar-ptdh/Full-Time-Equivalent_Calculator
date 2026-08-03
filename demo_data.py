@@ -125,13 +125,15 @@ def staff() -> list[StaffRow]:
         for pos in keep:
             rows.append(StaffRow(
                 posisi=pos, category_posisi="Operational", site=site,
-                rasio_roster=1.5, area_kerja=area, beban_admin=2.0,
-                jam_efektif=10.0, jam_supervisi=0.15, ewdy=0.6,
+                rasio_roster=1.43, area_kerja=area * 3, beban_admin=1539.0,
+                jam_efektif=2656.5, jam_supervisi=1.0708, ewdy=253.0,
+                k=0.51, k_spv=0.64,
             ))
         for pos in planner_positions:
             rows.append(StaffRow(
                 posisi=pos, category_posisi="Planner", site=site,
-                rasio_roster=1.5, area_kerja=area, beban_admin=6.5,
-                jam_efektif=10.0, jam_supervisi=float("nan"), ewdy=float("nan"),
+                rasio_roster=1.43, area_kerja=area, beban_admin=1813.0,
+                jam_efektif=2656.5, jam_supervisi=float("nan"), ewdy=float("nan"),
+                k=0.51, k_spv=1.0, fte_spv_lookup=1.0,
             ))
     return rows
