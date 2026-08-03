@@ -1297,7 +1297,7 @@ DIRECTORATES = {
         "title": "OD & HCM Strategy",
         "accent": theme.BRAND["amber"],
         "wash": "#FFF4DC",
-        "desc": "Record the field study that sets how many hours a mechanic "
+        "desc": "Record the field that sets how many hours a mechanic "
                 "actually works.",
         "fills": "Fills in the <b>Mechanic Observation Form</b> — effective "
                  "mechanic working hour.",
