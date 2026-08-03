@@ -98,12 +98,12 @@ def _empty(height: int, msg: str = "No data to display yet") -> go.Figure:
 
 
 # ---------------------------------------------------------------------------
-# 1) Total FTE per section & per role — batang horizontal, warna per ROLE
+# 1) Total MPP per section & per role — batang horizontal, warna per ROLE
 # ---------------------------------------------------------------------------
 def level_donut(level_totals: Dict[str, float], height: int = 286) -> go.Figure:
     """Menjawab: 'seberapa berat komposisi tenaga senior vs junior?'
 
-    Center hole dipakai untuk total FTE supaya tidak perlu KPI tambahan.
+    Center hole dipakai untuk total MPP supaya tidak perlu KPI tambahan.
     """
     vals = [level_totals.get(l, 0) for l in LEVELS]
     total = sum(vals)
@@ -126,7 +126,7 @@ def level_donut(level_totals: Dict[str, float], height: int = 286) -> go.Figure:
             insidetextorientation="horizontal",
             textfont=dict(family="Archivo", size=12, color="#fff"),
             hovertext=[
-                f"<b>{l} ({LEVEL_NOTE[l]})</b><br>{num(v)} FTE · {num(v / total * 100, 1)}%"
+                f"<b>{l} ({LEVEL_NOTE[l]})</b><br>{num(v)} MPP · {num(v / total * 100, 1)}%"
                 for l, v in zip(LEVELS, vals)
             ],
             hovertemplate="%{hovertext}<extra></extra>",
@@ -135,7 +135,7 @@ def level_donut(level_totals: Dict[str, float], height: int = 286) -> go.Figure:
     fig.add_annotation(
         text=(
             f"<span style='font-family:Archivo;font-size:26px;font-weight:800;color:{NEUTRAL['text']}'>{num(total)}</span>"
-            f"<br><span style='font-size:10px;color:{NEUTRAL['text_muted']};letter-spacing:.08em'>TOTAL FTE</span>"
+            f"<br><span style='font-size:10px;color:{NEUTRAL['text_muted']};letter-spacing:.08em'>TOTAL MPP</span>"
         ),
         showarrow=False, xref="paper", yref="paper", x=0.5, y=0.5, align="center",
     )
@@ -184,11 +184,11 @@ def level_stack_by_section(
         for cat in sections:
             v = mechanic_by_category[cat].get(lvl, 0)
             y.append(v)
-            hover.append(f"<b>{cat}</b><br>Mechanic {lvl}: {num(v)} FTE")
+            hover.append(f"<b>{cat}</b><br>Mechanic {lvl}: {num(v)} MPP")
         for name, tot in extras:
             v = tot.get(lvl, 0)
             y.append(v)
-            hover.append(f"<b>{name}</b> (company-wide)<br>{lvl}: {num(v)} FTE")
+            hover.append(f"<b>{name}</b> (company-wide)<br>{lvl}: {num(v)} MPP")
         fig.add_trace(
             go.Bar(
                 x=x, y=y, name=lvl,
@@ -283,8 +283,8 @@ def level_stack_by_section_h(
             marker=dict(color=LEVEL_SHADES[lvl], line=dict(width=0)),
             customdata=[[t, (val / t * 100 if t else 0)] for val, t in zip(vals, totals)],
             hovertemplate=(
-                "<b>%{y}</b><br>" + lvl + ": %{x:.0f} FTE"
-                "<br>Section total: %{customdata[0]:.0f} FTE"
+                "<b>%{y}</b><br>" + lvl + ": %{x:.0f} MPP"
+                "<br>Section total: %{customdata[0]:.0f} MPP"
                 "<br>Share of section: %{customdata[1]:.1f}%<extra></extra>"
             ),
         )
@@ -331,7 +331,7 @@ def share_donut(
     values = [p[1] for p in pairs]
     colors = [p[2] for p in pairs]
     total = sum(values)
-    fmt = rp if money else (lambda v: f"{num(v)} FTE")
+    fmt = rp if money else (lambda v: f"{num(v)} MPP")
 
     fig = go.Figure(
         go.Pie(
@@ -455,7 +455,7 @@ def role_donut(fte_table: dict, height: int = 210, show_legend: bool = True) -> 
             marker=dict(colors=[ROLE_COLORS[r] for r in roles], line=dict(color="#fff", width=2)),
             textinfo="none",
             hovertext=[
-                f"<b>{ROLE_LABEL[r]}</b><br>{num(v)} FTE · {num(v / total * 100, 1)}%"
+                f"<b>{ROLE_LABEL[r]}</b><br>{num(v)} MPP · {num(v / total * 100, 1)}%"
                 for r, v in zip(roles, vals)
             ],
             hovertemplate="%{hovertext}<extra></extra>",
@@ -464,7 +464,7 @@ def role_donut(fte_table: dict, height: int = 210, show_legend: bool = True) -> 
     fig.add_annotation(
         text=(
             f"<span style='font-family:Archivo;font-size:22px;font-weight:800;color:{NEUTRAL['text']}'>{num(total)}</span>"
-            f"<br><span style='font-size:9.5px;color:{NEUTRAL['text_muted']};letter-spacing:.08em'>TOTAL FTE</span>"
+            f"<br><span style='font-size:9.5px;color:{NEUTRAL['text_muted']};letter-spacing:.08em'>TOTAL MPP</span>"
         ),
         showarrow=False, xref="paper", yref="paper", x=0.5, y=0.5,
     )
