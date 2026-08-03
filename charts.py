@@ -346,14 +346,19 @@ def share_donut(
             hovertemplate="%{hovertext}<extra></extra>",
         )
     )
+    # Ukuran teks tengah mengikuti tinggi chart. Nilai tetap 25px membuat
+    # angka panjang seperti "Rp 15,19 M" melewati lubang donut dan menabrak
+    # irisannya pada chart yang pendek.
+    size = max(13, min(24, round(height * 0.078)))
     fig.add_annotation(
         x=0.5, y=0.55, xref="paper", yref="paper", showarrow=False, text=center_value,
-        font=dict(family="Archivo", size=25, color=NEUTRAL["text"]),
+        font=dict(family="Archivo", size=size, color=NEUTRAL["text"]),
     )
     if center_note:
         fig.add_annotation(
             x=0.5, y=0.43, xref="paper", yref="paper", showarrow=False, text=center_note,
-            font=dict(family="Public Sans", size=10, color=NEUTRAL["text_muted"]),
+            font=dict(family="Public Sans", size=max(8, round(size * 0.42)),
+                      color=NEUTRAL["text_muted"]),
         )
     fig.update_layout(**_layout(height, margin=dict(l=6, r=6, t=6, b=6)))
     return fig
