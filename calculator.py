@@ -364,7 +364,7 @@ def compute_staff_fte(
         Supervisor (Planner)
             = dibaca dari kolom "FTE SPV" (lookup, bukan dihitung ulang)
         Superintendent
-            = CEILING((total SPV Operational + total SPV Planner) / 5)
+            = CEILING(total SPV Operational / 5) + CEILING(total SPV Planner / 5)
 
     Perubahan dari v2:
 
@@ -377,8 +377,11 @@ def compute_staff_fte(
     4.  Suku supervisi Supervisor tidak memakai Jam Supervisi (H); hanya
         Foreman^k_spv * EWDY * AreaKerja.
 
-    Superintendent dihitung sekali untuk seluruh site dari jumlah SPV
-    Operational + Planner (bukan per grup), lalu dibulatkan ke atas 1:5.
+    Superintendent dihitung PER GRUP: SPV Operational dijumlahkan dulu lalu
+    dirasiokan 1:5 dan dibulatkan ke atas, dan hal yang sama berlaku terpisah
+    untuk SPV Planner. Totalnya adalah penjumlahan kedua hasil itu - bukan
+    1:5 atas gabungan keduanya, karena pembulatan ke atas per grup memberi
+    hasil yang berbeda.
 
     Baris dengan data tidak lengkap dilewati diam-diam, seperti sebelumnya.
     """
@@ -477,14 +480,17 @@ def compute_staff_fte(
                 "supervisor": supervisor,
             })
 
-    total_spv = (sum(r["supervisor"] for r in operational)
-                 + sum(r["supervisor"] for r in planner))
-    superintendent = math.ceil(total_spv / SUPERINTENDENT_SPAN) if total_spv else 0
+    spv_oper = sum(r["supervisor"] for r in operational)
+    spv_plan = sum(r["supervisor"] for r in planner)
+    supt_oper = math.ceil(spv_oper / SUPERINTENDENT_SPAN) if spv_oper else 0
+    supt_plan = math.ceil(spv_plan / SUPERINTENDENT_SPAN) if spv_plan else 0
 
     return {
         "operational": operational,
         "planner": planner,
-        "superintendent": superintendent,
+        "superintendent_operational": supt_oper,
+        "superintendent_planner": supt_plan,
+        "superintendent": supt_oper + supt_plan,
     }
 
 
