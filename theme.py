@@ -708,9 +708,14 @@ def inject_css():
         /* Grid parameter rumus — dipakai di panel "Formula parameters" yang
            bisa dibuka-tutup di atas dashboard. Kotak kecil label + nilai,
            membungkus sendiri sesuai lebar layar. */
+        /* Kolom TETAP, bukan auto-fill: keempat kartu parameter harus selalu
+           terlihat sekaligus. Baru di bawah 900px ia turun jadi dua kolom. */
         .dh-infogrid {{
             display: grid; gap: 8px;
-            grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }}
+        @media (max-width: 900px) {{
+            .dh-infogrid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
         }}
         .dh-infogrid .cell {{
             background: {NEUTRAL['wash']};
@@ -778,6 +783,131 @@ def inject_css():
         div[class*="st-key-detail_panel"] details summary [data-testid="stMarkdownContainer"] p {{
             font-size: 13px !important; font-weight: 800 !important;
             color: {NEUTRAL['text']} !important;
+        }}
+
+        /* =====================================================
+           SECTION HEADING — pengganti legend_strip navy yang lebar penuh.
+           Yang lama terlihat "keluar dari kanvas putih" karena ia balok gelap
+           selebar layar tanpa kartu di belakangnya. Versi ini ramping,
+           menempel pada grid kartu, dan hanya memakai aksen garis kiri.
+           ===================================================== */
+        .dh-section {{
+            display: flex; align-items: baseline; gap: 12px;
+            margin: 22px 0 10px 0; padding: 0 0 9px 0;
+            border-bottom: 1px solid {NEUTRAL['border']};
+        }}
+        .dh-section .no {{
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 22px; height: 22px; border-radius: 6px; flex: 0 0 auto;
+            background: {BRAND['navy']}; color: #fff;
+            font-size: 11px; font-weight: 800; align-self: center;
+        }}
+        .dh-section .ttl {{
+            font-family: {FONT_DISPLAY}; font-size: 16px; font-weight: 800;
+            color: {NEUTRAL['text']}; letter-spacing: -.01em;
+        }}
+        .dh-section .sub {{
+            font-size: 11.5px; color: {NEUTRAL['text_muted']}; font-weight: 500;
+            flex: 1 1 auto;
+        }}
+        .dh-section .tag {{
+            font-size: 10px; font-weight: 800; letter-spacing: .06em;
+            text-transform: uppercase; color: {BRAND['orange_deep']};
+            background: {tint(BRAND['orange'], .90)};
+            border-radius: 999px; padding: 4px 10px; flex: 0 0 auto;
+        }}
+
+        /* =====================================================
+           LANDING PAGE
+           ===================================================== */
+        @keyframes dh-rise {{
+            from {{ opacity: 0; transform: translateY(14px); }}
+            to   {{ opacity: 1; transform: translateY(0); }}
+        }}
+        @keyframes dh-sheen {{
+            0%   {{ background-position: -140% 0; }}
+            100% {{ background-position: 240% 0; }}
+        }}
+        @keyframes dh-float {{
+            0%, 100% {{ transform: translateY(0); }}
+            50%      {{ transform: translateY(-7px); }}
+        }}
+
+        .dh-hero {{
+            position: relative; overflow: hidden;
+            border-radius: 18px; padding: 40px 34px 36px 34px; margin-bottom: 8px;
+            background:
+                radial-gradient(120% 150% at 10% 0%, rgba(255,255,255,.24) 0%, rgba(255,255,255,0) 55%),
+                linear-gradient(180deg, {BRAND['amber']} 0%, #FFA614 30%,
+                                {BRAND['orange']} 72%, #F25F02 100%);
+            box-shadow: 0 18px 40px -22px rgba(217,78,0,.75);
+            animation: dh-rise .55s ease both;
+        }}
+        /* kilau yang menyapu pelan dari kiri ke kanan */
+        .dh-hero::after {{
+            content: ""; position: absolute; inset: 0; pointer-events: none;
+            background: linear-gradient(105deg, rgba(255,255,255,0) 38%,
+                        rgba(255,255,255,.30) 50%, rgba(255,255,255,0) 62%);
+            background-size: 220% 100%;
+            animation: dh-sheen 5.5s ease-in-out infinite;
+        }}
+        .dh-hero .logo {{ height: 56px; animation: dh-float 5s ease-in-out infinite; }}
+        .dh-hero h1 {{
+            font-family: {FONT_DISPLAY}; font-size: 34px; font-weight: 800;
+            color: #fff; margin: 14px 0 6px 0; line-height: 1.1; letter-spacing: -.02em;
+        }}
+        .dh-hero p {{
+            font-size: 13.5px; color: rgba(255,255,255,.92); margin: 0; max-width: 620px;
+            line-height: 1.55;
+        }}
+        .dh-hero .eyebrow {{
+            font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+            color: rgba(255,255,255,.85); font-weight: 800;
+        }}
+
+        .dh-choice {{
+            background: {NEUTRAL['card']};
+            border: 1px solid {NEUTRAL['border']};
+            border-top: 3px solid var(--dh-accent, {BRAND['orange']});
+            border-radius: 14px; padding: 18px 18px 16px 18px;
+            height: 100%;
+            box-shadow: 0 2px 10px -6px rgba(16,24,40,.20);
+            transition: transform .18s ease, box-shadow .18s ease;
+            animation: dh-rise .55s ease both;
+        }}
+        .dh-choice:hover {{
+            transform: translateY(-4px);
+            box-shadow: 0 16px 30px -18px rgba(16,24,40,.45);
+        }}
+        .dh-choice .ico {{
+            width: 40px; height: 40px; border-radius: 11px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; margin-bottom: 11px;
+            background: var(--dh-wash, {tint(BRAND['orange'], .90)});
+        }}
+        .dh-choice h3 {{
+            font-family: {FONT_DISPLAY}; font-size: 16.5px; font-weight: 800;
+            color: {NEUTRAL['text']}; margin: 0 0 5px 0;
+        }}
+        .dh-choice .desc {{
+            font-size: 12px; color: {NEUTRAL['text_muted']}; line-height: 1.5;
+            margin: 0 0 11px 0;
+        }}
+        .dh-choice .guide-t {{
+            font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+            color: {NEUTRAL['text_soft']}; font-weight: 800; margin-bottom: 5px;
+        }}
+        .dh-choice ul {{ margin: 0; padding-left: 16px; }}
+        .dh-choice li {{
+            font-size: 11.5px; color: {NEUTRAL['text']}; line-height: 1.65;
+        }}
+
+        /* halaman embed: iframe dibuat rata dengan kanvas, tanpa kesan "kotak" */
+        div[class*="st-key-embed_frame"] iframe {{
+            border: 1px solid {NEUTRAL['border']} !important;
+            border-radius: 14px !important;
+            background: {NEUTRAL['card']};
+            box-shadow: 0 2px 12px -8px rgba(16,24,40,.35);
         }}
 
         /* daftar statistik ringkas di kartu (dipakai di bawah gauge cost) */
@@ -924,6 +1054,36 @@ def info_grid(items: list[tuple[str, str, str]]) -> str:
         for label, value, note in items
     )
     return f'<div class="dh-infogrid">{cells}</div>'
+
+
+def section_heading(no: int, title: str, sub: str = "", tag: str = "") -> str:
+    """Judul section ramping dengan nomor urut, aksen garis bawah tipis."""
+    tag_html = f'<span class="tag">{tag}</span>' if tag else ""
+    return (
+        f'<div class="dh-section"><span class="no">{no}</span>'
+        f'<span class="ttl">{title}</span>'
+        f'<span class="sub">{sub}</span>{tag_html}</div>'
+    )
+
+
+def hero(logo_uri: str, eyebrow: str, title: str, subtitle: str) -> str:
+    logo_html = f'<img class="logo" src="{logo_uri}" alt=""/>' if logo_uri else ""
+    return (
+        f'<div class="dh-hero">{logo_html}'
+        f'<div class="eyebrow">{eyebrow}</div>'
+        f'<h1>{title}</h1><p>{subtitle}</p></div>'
+    )
+
+
+def choice_card(icon: str, title: str, desc: str, guide: list[str],
+                accent: str, wash: str) -> str:
+    items = "".join(f"<li>{g}</li>" for g in guide)
+    return (
+        f'<div class="dh-choice" style="--dh-accent:{accent};--dh-wash:{wash}">'
+        f'<div class="ico">{icon}</div>'
+        f"<h3>{title}</h3><p class=\"desc\">{desc}</p>"
+        f'<div class="guide-t">What to fill in</div><ul>{items}</ul></div>'
+    )
 
 
 def stat_list(items: list[tuple[str, str]]) -> str:
