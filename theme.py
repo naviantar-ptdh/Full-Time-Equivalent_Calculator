@@ -835,7 +835,7 @@ def inject_css():
 
         .dh-hero {{
             position: relative; overflow: hidden;
-            border-radius: 18px; padding: 40px 34px 36px 34px; margin-bottom: 8px;
+            border-radius: 16px; padding: 22px 26px 24px 26px; margin-bottom: 4px;
             background:
                 radial-gradient(120% 150% at 10% 0%, rgba(255,255,255,.24) 0%, rgba(255,255,255,0) 55%),
                 linear-gradient(180deg, {BRAND['amber']} 0%, #FFA614 30%,
@@ -851,56 +851,59 @@ def inject_css():
             background-size: 220% 100%;
             animation: dh-sheen 5.5s ease-in-out infinite;
         }}
-        .dh-hero .logo {{ height: 56px; animation: dh-float 5s ease-in-out infinite; }}
-        .dh-hero h1 {{
-            font-family: {FONT_DISPLAY}; font-size: 34px; font-weight: 800;
-            color: #fff; margin: 14px 0 6px 0; line-height: 1.1; letter-spacing: -.02em;
+        /* Band hero sengaja pendek: satu baris logo + judul. Paragraf pengantar
+           dihapus karena membuat blok oranye ini mendominasi halaman. */
+        .dh-hero .row {{ display: flex; align-items: center; gap: 16px; }}
+        .dh-hero .logo {{
+            height: 42px; flex: 0 0 auto;
+            animation: dh-float 5.5s ease-in-out infinite;
         }}
-        .dh-hero p {{
-            font-size: 13.5px; color: rgba(255,255,255,.92); margin: 0; max-width: 620px;
-            line-height: 1.55;
+        .dh-hero .rule {{ width: 1px; height: 36px; background: rgba(255,255,255,.42); }}
+        .dh-hero h1 {{
+            font-family: {FONT_DISPLAY}; font-size: 25px; font-weight: 800;
+            color: #fff; margin: 0; line-height: 1.15; letter-spacing: -.015em;
         }}
         .dh-hero .eyebrow {{
-            font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
-            color: rgba(255,255,255,.85); font-weight: 800;
+            font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase;
+            color: rgba(255,255,255,.86); font-weight: 800; margin-bottom: 3px;
         }}
 
+        /* Kartu pilihan: ikon, judul, satu kalimat, satu baris "isinya apa".
+           Daftar panduan empat butir yang lama membuat halaman penuh teks. */
         .dh-choice {{
             background: {NEUTRAL['card']};
             border: 1px solid {NEUTRAL['border']};
-            border-top: 3px solid var(--dh-accent, {BRAND['orange']});
-            border-radius: 14px; padding: 18px 18px 16px 18px;
-            height: 100%;
-            box-shadow: 0 2px 10px -6px rgba(16,24,40,.20);
-            transition: transform .18s ease, box-shadow .18s ease;
-            animation: dh-rise .55s ease both;
+            border-radius: 16px; padding: 22px 20px 18px 20px;
+            min-height: 196px;
+            box-shadow: 0 2px 10px -7px rgba(16,24,40,.22);
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+            animation: dh-rise .5s ease both;
+            display: flex; flex-direction: column;
         }}
         .dh-choice:hover {{
-            transform: translateY(-4px);
-            box-shadow: 0 16px 30px -18px rgba(16,24,40,.45);
+            transform: translateY(-3px);
+            border-color: var(--dh-accent, {BRAND['orange']});
+            box-shadow: 0 16px 28px -20px rgba(16,24,40,.42);
         }}
         .dh-choice .ico {{
-            width: 40px; height: 40px; border-radius: 11px;
+            width: 52px; height: 52px; border-radius: 14px;
             display: flex; align-items: center; justify-content: center;
-            font-size: 20px; margin-bottom: 11px;
-            background: var(--dh-wash, {tint(BRAND['orange'], .90)});
+            margin-bottom: 13px; background: var(--dh-wash, {tint(BRAND['orange'], .92)});
         }}
+        .dh-choice .ico img {{ width: 30px; height: 30px; object-fit: contain; }}
         .dh-choice h3 {{
-            font-family: {FONT_DISPLAY}; font-size: 16.5px; font-weight: 800;
-            color: {NEUTRAL['text']}; margin: 0 0 5px 0;
+            font-family: {FONT_DISPLAY}; font-size: 17px; font-weight: 800;
+            color: {NEUTRAL['text']}; margin: 0 0 6px 0;
         }}
         .dh-choice .desc {{
-            font-size: 12px; color: {NEUTRAL['text_muted']}; line-height: 1.5;
-            margin: 0 0 11px 0;
+            font-size: 12.5px; color: {NEUTRAL['text_muted']}; line-height: 1.55;
+            margin: 0 0 12px 0; flex: 1 1 auto;
         }}
-        .dh-choice .guide-t {{
-            font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
-            color: {NEUTRAL['text_soft']}; font-weight: 800; margin-bottom: 5px;
+        .dh-choice .fills {{
+            font-size: 11.5px; color: {NEUTRAL['text']}; line-height: 1.5;
+            border-top: 1px dashed {NEUTRAL['border']}; padding-top: 10px;
         }}
-        .dh-choice ul {{ margin: 0; padding-left: 16px; }}
-        .dh-choice li {{
-            font-size: 11.5px; color: {NEUTRAL['text']}; line-height: 1.65;
-        }}
+        .dh-choice .fills b {{ color: var(--dh-accent, {BRAND['orange']}); font-weight: 800; }}
 
         /* halaman embed: iframe dibuat rata dengan kanvas, tanpa kesan "kotak" */
         div[class*="st-key-embed_frame"] iframe {{
@@ -908,6 +911,31 @@ def inject_css():
             border-radius: 14px !important;
             background: {NEUTRAL['card']};
             box-shadow: 0 2px 12px -8px rgba(16,24,40,.35);
+        }}
+
+        /* Pemilih periode di section Cost — digayakan seperti tombol navy
+           supaya terbaca sebagai kontrol, bukan sebagai input form. Sejajar
+           dengan judul sectionnya. */
+        div[class*="st-key-period_pick"] {{ margin-top: 20px; }}
+        div[class*="st-key-period_pick"] div[data-baseweb="select"] > div {{
+            background: {BRAND['navy']} !important;
+            border: 1px solid {BRAND['navy']} !important;
+            border-radius: 9px !important;
+            min-height: 40px !important;
+            cursor: pointer;
+            transition: background .16s ease;
+        }}
+        div[class*="st-key-period_pick"] div[data-baseweb="select"] > div:hover {{
+            background: #1B2C45 !important;
+        }}
+        div[class*="st-key-period_pick"] div[data-baseweb="select"] div,
+        div[class*="st-key-period_pick"] div[data-baseweb="select"] span {{
+            color: #FFFFFF !important;
+            font-weight: 800 !important;
+            font-size: 12.5px !important;
+        }}
+        div[class*="st-key-period_pick"] div[data-baseweb="select"] svg {{
+            fill: #FFFFFF !important; color: #FFFFFF !important;
         }}
 
         /* daftar statistik ringkas di kartu (dipakai di bawah gauge cost) */
@@ -1066,23 +1094,24 @@ def section_heading(no: int, title: str, sub: str = "", tag: str = "") -> str:
     )
 
 
-def hero(logo_uri: str, eyebrow: str, title: str, subtitle: str) -> str:
-    logo_html = f'<img class="logo" src="{logo_uri}" alt=""/>' if logo_uri else ""
+def hero(logo_uri: str, eyebrow: str, title: str) -> str:
+    logo_html = (f'<img class="logo" src="{logo_uri}" alt=""/>'
+                 f'<div class="rule"></div>') if logo_uri else ""
     return (
-        f'<div class="dh-hero">{logo_html}'
-        f'<div class="eyebrow">{eyebrow}</div>'
-        f'<h1>{title}</h1><p>{subtitle}</p></div>'
+        f'<div class="dh-hero"><div class="row">{logo_html}'
+        f'<div><div class="eyebrow">{eyebrow}</div><h1>{title}</h1></div>'
+        f"</div></div>"
     )
 
 
-def choice_card(icon: str, title: str, desc: str, guide: list[str],
+def choice_card(icon_uri: str, title: str, desc: str, fills: str,
                 accent: str, wash: str) -> str:
-    items = "".join(f"<li>{g}</li>" for g in guide)
+    ico = f'<img src="{icon_uri}" alt=""/>' if icon_uri else ""
     return (
         f'<div class="dh-choice" style="--dh-accent:{accent};--dh-wash:{wash}">'
-        f'<div class="ico">{icon}</div>'
-        f"<h3>{title}</h3><p class=\"desc\">{desc}</p>"
-        f'<div class="guide-t">What to fill in</div><ul>{items}</ul></div>'
+        f'<div class="ico">{ico}</div>'
+        f'<h3>{title}</h3><p class="desc">{desc}</p>'
+        f'<div class="fills">{fills}</div></div>'
     )
 
 
