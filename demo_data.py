@@ -113,9 +113,13 @@ def staff() -> list[StaffRow]:
         "Digger", "Hauler", "Auxilary Track", "Auxilary Wheel",
         "Support & Facility", "Electrician", "Welding & Fabrication",
     ]
+    # Sengaja lebih banyak daripada posisi operational, meniru sheet asli —
+    # ketimpangan jumlah baris inilah yang memperlihatkan apakah kartu kiri dan
+    # kanan benar-benar sejajar.
     planner_positions = [
-        "Maintenance Planning", "PLM Scheduling & PCR",
-        "Reliability Engineering", "Warehouse & Logistic",
+        "Maintenance Planning", "PLM Scheduling & PCR", "PLM Engineering",
+        "Condition Monitoring", "Plant Manpower", "Plant Asset",
+        "External Repair & Warranty", "Maintenance Training",
     ]
 
     rows: list[StaffRow] = []
