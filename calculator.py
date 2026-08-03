@@ -337,6 +337,9 @@ def compute_site_cost(
     return cost_table
 
 
+SUPERINTENDENT_SPAN = 5
+
+
 def compute_staff_fte(
     site: str,
     mechanic_by_category: Dict[str, Dict[str, float]],
@@ -344,28 +347,73 @@ def compute_staff_fte(
     electric_total: Dict[str, float],
     staff_rows: List[StaffRow],
 ) -> dict:
-    """Hitung Foreman + Supervisor (posisi 'Operational') dan FTE Planner
-    (posisi 'Planner') untuk Site terpilih, berdasarkan sheet 'Hasil Staff'.
+    """Foreman / Supervisor / Superintendent per site, sheet 'Hasil Staff' (v3).
 
-    - Foreman kategori Digger/Hauler/Auxilary Wheel/Auxilary Track/Support & Facility:
-        'Jumlah Mekanik' = M1 (rounded) dari mechanic_by_category kategori terkait.
-    - Foreman 'Electrician': 'Jumlah Mekanik' = M1 (rounded) dari electric_total.
-    - Foreman 'Welding & Fabrication': 'Jumlah Mekanik' = M1 (rounded) dari welder_total.
-      Formula: FTE = CEILING( (BebanAdmin + JumlahMekanik*JamSupervisi*EWDY) * AreaKerja / JamEfektif , 1)
-      Supervisor = ROUND(Foreman * 0.5, 0)
-    - Planner: FTE = CEILING( (BebanAdmin / JamEfektif * AreaKerja) * RasioRoster , 1)
-      (tidak butuh Jumlah Mekanik).
+    Rumus v3.1, mengikuti kolom L dan N di sheet (workbook FTE__8_):
 
-    Baris dengan data tidak lengkap (Area Kerja/Beban Admin/Jam Efektif kosong,
-    atau kategori posisi Operational tidak punya data Mechanic di site ini)
-    dilewati diam-diam (tidak error, tidak ditampilkan) sesuai keputusan user.
+        Jam Supervisi H = (12 - lost time site) / 8        <- sudah tersimpan di sheet
+
+        Foreman (Operational)
+            = CEILING((BebanAdmin + (TotalMekanik ^ k) * H * EWDY * AreaKerja)
+                      * RasioRoster / JamEfektif)
+        Foreman (Planner)
+            = CEILING((BebanAdmin / JamEfektif * AreaKerja) * RasioRoster)
+        Supervisor (Operational)
+            = CEILING((BebanAdmin + (Foreman ^ k_spv) * EWDY * AreaKerja)
+                      * RasioRoster / JamEfektif)          <- TANPA H
+        Supervisor (Planner)
+            = dibaca dari kolom "FTE SPV" (lookup, bukan dihitung ulang)
+        Superintendent
+            = CEILING((total SPV Operational + total SPV Planner) / 5)
+
+    Perubahan dari v2:
+
+    1.  Basis pangkat Foreman adalah TOTAL mekanik section (M1+M2+M3), bukan
+        lagi M1 saja.
+    2.  Supervisor tidak lagi `ROUND(Foreman * 0.5)`; ia memakai bentuk rumus
+        yang sama dengan Foreman, dengan Foreman sebagai basis pangkat.
+    3.  Area Kerja pindah KE DALAM suku supervisi, dan pengali di luar kurung
+        sekarang Rasio Roster - bukan lagi Area Kerja.
+    4.  Suku supervisi Supervisor tidak memakai Jam Supervisi (H); hanya
+        Foreman^k_spv * EWDY * AreaKerja.
+
+    Superintendent dihitung sekali untuk seluruh site dari jumlah SPV
+    Operational + Planner (bukan per grup), lalu dibulatkan ke atas 1:5.
+
+    Baris dengan data tidak lengkap dilewati diam-diam, seperti sebelumnya.
     """
     def norm(s: str) -> str:
         return BackendData._normalize(s)
 
-    mech_by_norm = {norm(k): v for k, v in mechanic_by_category.items()}
+    def _tot(d: Dict[str, float]) -> float:
+        """Total mekanik section: pakai 'Tot' kalau ada, kalau tidak jumlahkan M1-M3."""
+        if "Tot" in d:
+            return d["Tot"]
+        return sum(d.get(m, 0.0) for m in ("M1", "M2", "M3"))
 
+    def _staff_fte(beban, base, k, h, ewdy, area, rasio, jam_efektif) -> int:
+        """(BebanAdmin + base^k * H * EWDY * AreaKerja) * RasioRoster / JamEfektif.
+
+        `h` diisi 1.0 untuk Supervisor, karena rumus SPV di sheet tidak lagi
+        mengalikan Jam Supervisi.
+        """
+        beban_supervisi = (base ** k) * h * ewdy * area if base > 0 else 0.0
+        return math.ceil((beban + beban_supervisi) * rasio / jam_efektif)
+
+    mech_by_norm = {norm(k): v for k, v in mechanic_by_category.items()}
     site_rows = [r for r in staff_rows if r.site.strip().lower() == site.strip().lower()]
+
+    # Jam supervisi dipakai bersama satu site; baris Planner mengosongkannya di
+    # sheet, jadi nilainya diambil dari baris Operational site yang sama.
+    site_h = next(
+        (r.jam_supervisi for r in site_rows
+         if not math.isnan(r.jam_supervisi) and r.jam_supervisi > 0),
+        float("nan"),
+    )
+    site_ewdy = next(
+        (r.ewdy for r in site_rows if not math.isnan(r.ewdy) and r.ewdy > 0),
+        float("nan"),
+    )
 
     operational: List[dict] = []
     planner: List[dict] = []
@@ -373,42 +421,71 @@ def compute_staff_fte(
     for row in site_rows:
         cat_pos = row.category_posisi.strip().lower()
 
-        # Data wajib yang harus lengkap untuk semua jenis posisi
         if any(math.isnan(x) for x in (row.area_kerja, row.beban_admin, row.jam_efektif)):
             continue
 
         if cat_pos == "operational":
-            if math.isnan(row.jam_supervisi) or math.isnan(row.ewdy):
+            h = row.jam_supervisi if not math.isnan(row.jam_supervisi) else site_h
+            ewdy = row.ewdy if not math.isnan(row.ewdy) else site_ewdy
+            if math.isnan(h) or math.isnan(ewdy):
                 continue
+
             pnorm = norm(row.posisi)
             if pnorm == norm("Electrician"):
-                jumlah_mekanik = electric_total.get("M1", 0.0)
+                jumlah_mekanik = _tot(electric_total)
             elif pnorm == norm("Welding & Fabrication"):
-                jumlah_mekanik = welder_total.get("M1", 0.0)
+                jumlah_mekanik = _tot(welder_total)
             else:
                 match = mech_by_norm.get(pnorm)
                 if match is None:
-                    continue  # kategori ini tidak punya unit/mekanik di site -> sembunyikan
-                jumlah_mekanik = match.get("M1", 0.0)
+                    continue  # section tanpa unit di site ini -> disembunyikan
+                jumlah_mekanik = _tot(match)
 
-            foreman = math.ceil(
-                (row.beban_admin + jumlah_mekanik * row.jam_supervisi * row.ewdy) * row.area_kerja / row.jam_efektif
-            )
-            supervisor = excel_round(foreman * 0.5, 0)
+            k = row.k if not math.isnan(row.k) else 1.0
+            k_spv = row.k_spv if not math.isnan(row.k_spv) else 1.0
+            rasio = row.rasio_roster if not math.isnan(row.rasio_roster) else 1.0
+
+            foreman = _staff_fte(row.beban_admin, jumlah_mekanik, k, h, ewdy,
+                                 row.area_kerja, rasio, row.jam_efektif)
+            supervisor = _staff_fte(row.beban_admin, foreman, k_spv, 1.0, ewdy,
+                                    row.area_kerja, rasio, row.jam_efektif)
             operational.append({
                 "posisi": row.posisi,
                 "jumlah_mekanik": jumlah_mekanik,
                 "foreman": foreman,
-                "supervisor": int(supervisor),
+                "supervisor": supervisor,
             })
 
         elif cat_pos == "planner":
             if row.rasio_roster is None or math.isnan(row.rasio_roster):
                 continue
-            fte = math.ceil((row.beban_admin / row.jam_efektif * row.area_kerja) * row.rasio_roster)
-            planner.append({"posisi": row.posisi, "fte": fte})
+            foreman = math.ceil(
+                (row.beban_admin / row.jam_efektif * row.area_kerja) * row.rasio_roster
+            )
+            # Supervisor Planner TIDAK dihitung ulang: nilainya dilookup dari
+            # kolom "FTE SPV" di sheet (di workbook terbaru kolom itu memang
+            # berisi angka, bukan rumus), supaya perubahan di spreadsheet
+            # langsung terbawa ke sini.
+            supervisor = (
+                int(row.fte_spv_lookup)
+                if not math.isnan(row.fte_spv_lookup) else 0
+            )
+            planner.append({
+                "posisi": row.posisi,
+                "foreman": foreman,
+                "fte": foreman,      # alias lama, masih dipakai sebagian UI
+                "supervisor": supervisor,
+            })
 
-    return {"operational": operational, "planner": planner}
+    total_spv = (sum(r["supervisor"] for r in operational)
+                 + sum(r["supervisor"] for r in planner))
+    superintendent = math.ceil(total_spv / SUPERINTENDENT_SPAN) if total_spv else 0
+
+    return {
+        "operational": operational,
+        "planner": planner,
+        "superintendent": superintendent,
+    }
 
 
 def compute_fte(inputs: FTEInput, backend: BackendData) -> dict:
