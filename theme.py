@@ -391,7 +391,7 @@ def inject_css():
             background: {NEUTRAL['card']};
             border: 1px solid {NEUTRAL['border']};
             border-radius: 12px;
-            padding: 12px 14px 8px 14px;
+            padding: 14px 16px 14px 16px;
             box-shadow: 0 1px 2px rgba(17,24,39,.05);
             height: auto !important;
             flex-grow: 0 !important;
@@ -402,9 +402,11 @@ def inject_css():
         div[class*="st-key-card_"] div[data-testid="stVerticalBlock"] {{ gap: 0.35rem !important; }}
         div[class*="st-key-card_"] div[data-testid="stCaptionContainer"] p {{ margin-bottom: 0; }}
 
+        /* Jarak judul kartu ke isinya dilebarkan: sebelumnya chart menempel
+           persis di bawah garis judul sehingga kartu terasa sesak. */
         .dh-card-head {{
             display: flex; align-items: center; gap: 8px;
-            padding-bottom: 8px; margin-bottom: 4px;
+            padding-bottom: 9px; margin-bottom: 12px;
             border-bottom: 1px solid {NEUTRAL['border_soft']};
         }}
         .dh-card-head .bar {{
@@ -683,7 +685,7 @@ def inject_css():
         /* Legend donut dengan persentase — menggantikan legend bawaan Plotly
            supaya angka share-nya ikut terbaca dan gaya barisnya sama dengan
            komponen lain di kartu. */
-        .dh-plegend {{ margin-top: 4px; }}
+        .dh-plegend {{ margin-top: 12px; }}
         .dh-plegend .row {{
             display: flex; align-items: center; gap: 9px;
             padding: 8px 2px; border-top: 1px dashed {NEUTRAL['border']};
@@ -710,9 +712,12 @@ def inject_css():
            membungkus sendiri sesuai lebar layar. */
         /* Kolom TETAP, bukan auto-fill: keempat kartu parameter harus selalu
            terlihat sekaligus. Baru di bawah 900px ia turun jadi dua kolom. */
+        /* Enam kartu -> tiga kolom, jadi ia jatuh rapi menjadi dua baris penuh
+           alih-alih 4 + 2 yang menyisakan lubang di kanan bawah. */
         .dh-infogrid {{
-            display: grid; gap: 8px;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            display: grid; gap: 9px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            margin-bottom: 10px;
         }}
         @media (max-width: 900px) {{
             .dh-infogrid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -793,7 +798,7 @@ def inject_css():
            ===================================================== */
         .dh-section {{
             display: flex; align-items: baseline; gap: 12px;
-            margin: 22px 0 10px 0; padding: 0 0 9px 0;
+            margin: 30px 0 16px 0; padding: 0 0 10px 0;
             border-bottom: 1px solid {NEUTRAL['border']};
         }}
         .dh-section .no {{
@@ -959,7 +964,8 @@ def inject_css():
         .dh-note {{
             font-size: 11px; color: {NEUTRAL['text_soft']}; margin-top: 2px;
         }}
-        .dh-legend {{ display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }}
+        .dh-legend {{ display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px;
+                       padding-top: 10px; border-top: 1px dashed {NEUTRAL['border_soft']}; }}
         .dh-legend .it {{
             display: inline-flex; align-items: center; gap: 5px;
             font-size: 11px; font-weight: 600; color: {NEUTRAL['text_muted']};
