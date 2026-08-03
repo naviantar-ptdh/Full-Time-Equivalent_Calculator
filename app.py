@@ -269,13 +269,18 @@ LEVEL_LEGEND = [
 # ---------------------------------------------------------------------------
 # Formula parameters panel
 # ---------------------------------------------------------------------------
-def formula_items(backend, unit_qty: float, site: str | None = None) -> list:
-    """The four inputs the manpower formula actually turns on.
+# Konstanta pengali yang berlaku sama di seluruh site. Nilainya statis dan
+# tidak berasal dari BACKEND, jadi ia dideklarasikan di sini dan ditampilkan
+# apa adanya sebagai kartu parameter.
+GLOBAL_CONSTANT = 0.78
 
-    Trimmed down deliberately: the earlier version listed every constant in
-    the model (RACI, splits, cost rates, competency factor...), which buried
-    the numbers a reader checks in practice. Unit QUANTITY is used here, not
-    the number of unit types — one Sheet9 row can carry 25 units.
+
+def formula_items(backend, unit_qty: float, site: str | None = None) -> list:
+    """Enam masukan yang menggerakkan rumus manpower.
+
+    Effective working hour, travelling hour, dan konstanta masing-masing
+    berdiri sebagai kartu sendiri — sebelumnya dua yang pertama menumpang di
+    baris catatan kartu lain, jadi angkanya tidak bisa dibaca sekilas.
     """
     if site:
         jarak = backend.jarak.get(site)
@@ -285,11 +290,15 @@ def formula_items(backend, unit_qty: float, site: str | None = None) -> list:
             ("Unit quantity", num(unit_qty), "total units in scope"),
             ("Shift ratio", num(ratio, 2) if ratio is not None else "", f"site {site}"),
             ("Distance", f"{num(jarak, 2)} km" if jarak is not None else "",
-             f"travel hours = distance / {TRAVEL_DIVISOR}"),
+             f"work area · site {site}"),
+            ("Travelling hour",
+             f"{num(jarak / TRAVEL_DIVISOR, 2)} h" if jarak is not None else "",
+             f"distance / {TRAVEL_DIVISOR}"),
             ("Effective working hour",
              f"{num(BASE_MECHANIC_HOURS - lost, 2)} h" if lost is not None else "",
-             f"{num(BASE_MECHANIC_HOURS)} − lost time {num(lost, 2)} h"
+             f"mechanic · site {site} · lost time {num(lost, 2)} h"
              if lost is not None else ""),
+            ("Constant", num(GLOBAL_CONSTANT, 2), "all sites · fixed value"),
         ]
 
     # Di mode Summary nilainya berbeda-beda per site, jadi ditulis per site
@@ -311,11 +320,14 @@ def formula_items(backend, unit_qty: float, site: str | None = None) -> list:
     return [
         ("Unit quantity", num(unit_qty), "total units across all sites"),
         ("Shift ratio", per_site(backend.ratio_shift), "per site"),
-        ("Distance", per_site(backend.jarak, 2, " km"),
-         f"travel hours = distance / {TRAVEL_DIVISOR}"),
+        ("Distance", per_site(backend.jarak, 2, " km"), "work area · per site"),
+        ("Travelling hour",
+         per_site(backend.jarak, 2, " h", lambda v: v / TRAVEL_DIVISOR),
+         f"distance / {TRAVEL_DIVISOR}"),
         ("Effective working hour",
          per_site(backend.lost_time, 2, " h", lambda v: BASE_MECHANIC_HOURS - v),
-         f"{num(BASE_MECHANIC_HOURS)} − lost time"),
+         f"mechanic · {num(BASE_MECHANIC_HOURS)} − lost time"),
+        ("Constant", num(GLOBAL_CONSTANT, 2), "all sites · fixed value"),
     ]
 
 
@@ -516,12 +528,12 @@ def render_non_staff(summary: dict):
                 charts.share_donut(
                     MONTH_COLS, [level_totals[m] for m in MONTH_COLS],
                     [theme.LEVEL_SHADES[m] for m in MONTH_COLS],
-                    num(grand), "TOTAL MPP", height=286),
+                    num(grand), "TOTAL MPP", height=259),
                 width="stretch", config={"displayModeBar": False},
             )
             st.markdown(
                 theme.donut_legend([
-                    (theme.LEVEL_SHADES[m], m, f"{num(level_totals[m])} FTE",
+                    (theme.LEVEL_SHADES[m], m, f"{num(level_totals[m])} MPP",
                      f"{num(level_totals[m] / grand * 100, 1)}%" if grand else "0%")
                     for m in MONTH_COLS
                 ]),
@@ -605,12 +617,12 @@ def render_staff(staff: dict):
             st.plotly_chart(
                 charts.share_donut(
                     [p[0] for p in parts], [p[1] for p in parts], [p[2] for p in parts],
-                    num(tot["Tot"]), "STAFF MPP", height=266),
+                    num(tot["Tot"]), "STAFF MPP", height=258),
                 width="stretch", config={"displayModeBar": False},
             )
             st.markdown(
                 theme.donut_legend([
-                    (c, lbl, f"{num(v)} FTE",
+                    (c, lbl, f"{num(v)} MPP",
                      f"{num(v / tot['Tot'] * 100, 1)}%" if tot["Tot"] else "0%")
                     for lbl, v, c in parts if v > 0
                 ]),
@@ -664,7 +676,7 @@ def render_cost(summary: dict, cost: dict, staff: dict):
                 charts.share_donut(
                     MONTH_COLS, [ns_level[m] for m in MONTH_COLS],
                     [theme.LEVEL_SHADES[m] for m in MONTH_COLS],
-                    rp_short(ns_total), suffix.upper(), height=184, money=True),
+                    rp_short(ns_total), suffix.upper(), height=176, money=True),
                 width="stretch", config={"displayModeBar": False},
             )
             st.markdown(
@@ -729,7 +741,7 @@ def render_cost(summary: dict, cost: dict, staff: dict):
             st.plotly_chart(
                 charts.share_donut(
                     [p[0] for p in parts], [p[1] for p in parts], [p[2] for p in parts],
-                    rp_short(st_total), suffix.upper(), height=266, money=True),
+                    rp_short(st_total), suffix.upper(), height=258, money=True),
                 width="stretch", config={"displayModeBar": False},
             )
             st.markdown(
@@ -1006,7 +1018,7 @@ def render_calculator_mode(backend):
             st.markdown(
                 theme.donut_legend([
                     (theme.ROLE_COLORS[r], theme.ROLE_LABEL[r],
-                     f"{num(result['fte'][r]['Tot'])} FTE",
+                     f"{num(result['fte'][r]['Tot'])} MPP",
                      f"{num(result['fte'][r]['Tot'] / grand * 100, 1)}%")
                     for r in ("Mechanic", "Electric", "Welder")
                 ]),
@@ -1119,7 +1131,6 @@ def render_basecase_mode(backend):
             theme.header_band(
                 "Basecase All Unit",
                 "Manpower requirement for every unit within one site",
-                chips=["Site <b>not selected</b>"],
             ),
             unsafe_allow_html=True,
         )
@@ -1171,15 +1182,12 @@ def render_basecase_mode(backend):
 
     result = st.session_state.get("calc_result")
 
-    jarak = backend.jarak.get(site)
-    chips = [f"Site <b>{site}</b>", f"Competency factor <b>{num(cf, 2)}</b>"]
-    if jarak is not None:
-        chips.append(f"Distance <b>{num(jarak, 1)} km</b>")
+    # Tanpa chip: nilainya sudah tampil sebagai kartu parameter tepat di
+    # bawah band ini, jadi mengulangnya hanya menambah keramaian.
     st.markdown(
         theme.header_band(
             f"Basecase All Unit — {site}",
             "Manpower requirement for every unit within one site",
-            chips=chips,
         ),
         unsafe_allow_html=True,
     )
@@ -1231,8 +1239,6 @@ def render_summary_mode(backend):
         theme.header_band(
             "Summary — All Sites",
             "Every unit across every site, rolled up into one view",
-            chips=[f"Competency factor <b>{num(cf, 2)}</b>",
-                   f"Sites <b>{len(backend.sites or [])}</b>"],
         ),
         unsafe_allow_html=True,
     )
@@ -1297,7 +1303,7 @@ DIRECTORATES = {
         "title": "OD & HCM Strategy",
         "accent": theme.BRAND["amber"],
         "wash": "#FFF4DC",
-        "desc": "Record the field that sets how many hours a mechanic "
+        "desc": "Record the field study that sets how many hours a mechanic "
                 "actually works.",
         "fills": "Fills in the <b>Mechanic Observation Form</b> — effective "
                  "mechanic working hour.",
