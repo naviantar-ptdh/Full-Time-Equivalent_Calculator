@@ -247,6 +247,118 @@ def level_stack_by_section(
 # ---------------------------------------------------------------------------
 # 4) Cost — setengah lingkaran komposisi per role
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Section chart — horizontal stacked bar (M1-M3), total di ujung batang
+# ---------------------------------------------------------------------------
+def level_stack_by_section_h(
+    mechanic_by_category: Dict[str, Dict[str, float]],
+    welder_total: Dict[str, float],
+    electric_total: Dict[str, float],
+    height: int = 340,
+) -> go.Figure:
+    """Batang MENDATAR bertumpuk: panjang total = MPP section, warna = level.
+
+    Versi mendatar dipilih karena nama section ("Support & Facility",
+    "Auxilary Track") terpotong atau miring ketika dipakai sebagai label sumbu
+    X pada batang vertikal.
+    """
+    cats = list(mechanic_by_category.keys())
+    rows = [(c, mechanic_by_category[c]) for c in cats]
+    rows.append(("Welder", welder_total))
+    rows.append(("Electrician", electric_total))
+    rows = [(n, v) for n, v in rows if sum(v.get(m, 0) for m in LEVELS) > 0]
+    if not rows:
+        return _empty(height)
+
+    # dibalik supaya section terbesar berada di ATAS saat digambar Plotly
+    rows = rows[::-1]
+    names = [n for n, _ in rows]
+    totals = [sum(v.get(m, 0) for m in LEVELS) for _, v in rows]
+
+    fig = go.Figure()
+    for lvl in LEVELS:
+        vals = [v.get(lvl, 0) for _, v in rows]
+        fig.add_bar(
+            y=names, x=vals, orientation="h", name=lvl,
+            marker=dict(color=LEVEL_SHADES[lvl], line=dict(width=0)),
+            customdata=[[t, (val / t * 100 if t else 0)] for val, t in zip(vals, totals)],
+            hovertemplate=(
+                "<b>%{y}</b><br>" + lvl + ": %{x:.0f} FTE"
+                "<br>Section total: %{customdata[0]:.0f} FTE"
+                "<br>Share of section: %{customdata[1]:.1f}%<extra></extra>"
+            ),
+        )
+
+    fig.update_layout(barmode="stack", **_layout(height, margin=dict(l=4, r=44, t=6, b=6)))
+    fig.update_layout(bargap=0.32, showlegend=False)
+    fig.update_xaxes(showgrid=True, gridcolor=NEUTRAL["border_soft"], zeroline=False,
+                     tickfont=dict(family="Public Sans", size=10.5,
+                                   color=NEUTRAL["text_muted"]))
+    fig.update_yaxes(showgrid=False, zeroline=False,
+                     tickfont=dict(family="Public Sans", size=11,
+                                   color=NEUTRAL["text"]))
+    for name, tot in zip(names, totals):
+        fig.add_annotation(
+            x=tot, y=name, text=f"<b>{num(tot)}</b>", showarrow=False,
+            xanchor="left", xshift=7,
+            font=dict(family="Public Sans", size=10.5, color=NEUTRAL["text"]),
+        )
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Donut generik — dipakai untuk semua pie chart di dashboard
+# ---------------------------------------------------------------------------
+def share_donut(
+    labels: List[str],
+    values: List[float],
+    colors: List[str],
+    center_value: str,
+    center_note: str = "",
+    height: int = 300,
+    money: bool = False,
+) -> go.Figure:
+    """Donut penuh dengan tooltip yang selalu menyebut nilai DAN persentase.
+
+    `money=True` memformat nilai sebagai rupiah. Legend-nya tidak dipakai dari
+    Plotly melainkan dari `theme.donut_legend`, supaya persentasenya ikut
+    terbaca tanpa harus hover.
+    """
+    pairs = [(l, v, c) for l, v, c in zip(labels, values, colors) if v > 0]
+    if not pairs:
+        return _empty(height)
+    labels = [p[0] for p in pairs]
+    values = [p[1] for p in pairs]
+    colors = [p[2] for p in pairs]
+    total = sum(values)
+    fmt = rp if money else (lambda v: f"{num(v)} FTE")
+
+    fig = go.Figure(
+        go.Pie(
+            labels=labels, values=values, hole=0.62, sort=False,
+            direction="clockwise",
+            marker=dict(colors=colors, line=dict(color="#FFFFFF", width=2)),
+            texttemplate="%{percent:.1%}",
+            textposition="inside",
+            insidetextfont=dict(family="Public Sans", size=11, color="#FFFFFF"),
+            hovertext=[f"<b>{l}</b><br>{fmt(v)}<br>{num(v / total * 100, 1)}% of total"
+                       for l, v in zip(labels, values)],
+            hovertemplate="%{hovertext}<extra></extra>",
+        )
+    )
+    fig.add_annotation(
+        x=0.5, y=0.55, xref="paper", yref="paper", showarrow=False, text=center_value,
+        font=dict(family="Archivo", size=25, color=NEUTRAL["text"]),
+    )
+    if center_note:
+        fig.add_annotation(
+            x=0.5, y=0.43, xref="paper", yref="paper", showarrow=False, text=center_note,
+            font=dict(family="Public Sans", size=10, color=NEUTRAL["text_muted"]),
+        )
+    fig.update_layout(**_layout(height, margin=dict(l=6, r=6, t=6, b=6)))
+    return fig
+
+
 def share_semicircle(
     labels: List[str],
     values: List[float],
@@ -307,12 +419,17 @@ def share_semicircle(
 
 
 def cost_semicircle(cost_breakdown: dict, center_value: str, center_note: str = "",
-                    height: int = 210) -> go.Figure:
-    """Half donut of monthly/yearly cost, split by role."""
+                    height: int = 210, factor: int = 1) -> go.Figure:
+    """Half donut of cost split by role.
+
+    `factor` menskalakan NILAI IRISANNYA, bukan cuma teks di tengah. Tanpa ini,
+    kartu tahunan menampilkan total tahunan di tengah tetapi tooltipnya masih
+    memperlihatkan rupiah bulanan.
+    """
     roles = ["Mechanic", "Electric", "Welder"]
     return share_semicircle(
         [ROLE_LABEL[r] for r in roles],
-        [cost_breakdown.get(r, {}).get("Tot", 0) for r in roles],
+        [cost_breakdown.get(r, {}).get("Tot", 0) * factor for r in roles],
         [ROLE_COLORS[r] for r in roles],
         center_value, center_note, height,
     )
