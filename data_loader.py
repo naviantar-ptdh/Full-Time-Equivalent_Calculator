@@ -553,7 +553,13 @@ def parse_unit_sheet(raw: pd.DataFrame) -> Dict[str, List[UnitRow]]:
 # (v2) Hasil Staff — Data FTE Staff (Foreman/SPV/Planner) per Site
 #
 # Kolom: Posisi | Category posisi | Site | Rasio Roster | Area Kerja |
-#        Beban Kerja Administratif | Jam kerja Efektif Staff | Jam Supervisi | EWDY
+#        Beban Kerja Administratif | Jam kerja Efektif Staff | Jam Supervisi |
+#        EWDY | k | k spv | Contoh FTE | Rumus FTE | Contoh FTE SPV
+#
+# k dan k spv adalah eksponen pada rumus Foreman/Supervisor (v3). Kolom
+# "Contoh FTE SPV" (indeks 13) dibaca sebagai fte_spv_lookup: baris Planner
+# TIDAK menghitung supervisornya sendiri, melainkan melookup nilai di kolom
+# itu, supaya perubahan di spreadsheet langsung terbawa.
 # Dicari via header row (Kolom A == "Posisi"), bukan nomor baris hardcoded.
 # =========================================================
 @dataclass
@@ -567,6 +573,9 @@ class StaffRow:
     jam_efektif: float
     jam_supervisi: float
     ewdy: float
+    k: float = float("nan")
+    k_spv: float = float("nan")
+    fte_spv_lookup: float = float("nan")
 
 
 def parse_staff_sheet(raw: pd.DataFrame) -> List[StaffRow]:
@@ -600,6 +609,9 @@ def parse_staff_sheet(raw: pd.DataFrame) -> List[StaffRow]:
             jam_efektif=_safe_float(_cell(df, r, 6)),
             jam_supervisi=_safe_float(_cell(df, r, 7)),
             ewdy=_safe_float(_cell(df, r, 8)),
+            k=_safe_float(_cell(df, r, 9)),
+            k_spv=_safe_float(_cell(df, r, 10)),
+            fte_spv_lookup=_safe_float(_cell(df, r, 13)),
         ))
         r += 1
     return records
