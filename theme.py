@@ -385,7 +385,7 @@ def inject_css():
            mode Kalkulator (kartu Parameter) dan mode Basecase (kartu
            Persebaran M1-M3). Kartu dipaksa mengikuti tinggi isinya sendiri. */
         div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
-            align-items: flex-start !important;
+            align-items: stretch !important;
         }}
         div[class*="st-key-card_"] {{
             background: {NEUTRAL['card']};
@@ -398,6 +398,62 @@ def inject_css():
             align-self: flex-start !important;
             width: 100%;
         }}
+        /* Kartu berpasangan kiri-kanan: tingginya HARUS ditentukan oleh yang
+           tertinggi, bukan oleh tinggi chart yang dipatok manual. Jumlah baris
+           tabel berubah-ubah per site, jadi penyetelan tinggi chart satu per
+           satu selalu meleset begitu datanya ganti. Di sini kartunya dibiarkan
+           meregang mengikuti tinggi baris, lalu legend-nya didorong ke dasar
+           kartu supaya ruang kosongnya jatuh di tengah, bukan menggantung di
+           bawah. */
+        div[class*="st-key-card_level_donut"],
+        div[class*="st-key-card_staff_donut"],
+        div[class*="st-key-card_cost_ns_donut"],
+        div[class*="st-key-card_cost_st_donut"],
+        div[class*="st-key-card_total_section"],
+        div[class*="st-key-card_staff_table"],
+        div[class*="st-key-card_cost_ns_table"],
+        div[class*="st-key-card_cost_st_table"],
+        div[class*="st-key-card_total_head"],
+        div[class*="st-key-card_total_cost"] {{
+            align-self: stretch !important;
+            height: 100% !important;
+            flex-grow: 1 !important;
+        }}
+        /* Streamlit membungkus tiap kartu dalam stLayoutWrapper. Wrapper itu
+           adalah flex item di kolom, dan tanpa flex-grow ia hanya setinggi
+           isinya — jadi `height:100%` pada kartunya sendiri tidak berpengaruh.
+           :has() dipakai untuk menyasar wrapper lewat kartu di dalamnya. */
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_level_donut"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_staff_donut"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_cost_ns_donut"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_cost_st_donut"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_total_section"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_staff_table"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_cost_ns_table"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_cost_st_table"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_total_head"]),
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card_total_cost"]) {{
+            flex: 1 1 auto !important;
+            align-self: stretch !important;
+        }}
+
+        div[class*="st-key-card_level_donut"] > div[data-testid="stVerticalBlock"],
+        div[class*="st-key-card_staff_donut"] > div[data-testid="stVerticalBlock"],
+        div[class*="st-key-card_cost_ns_donut"] > div[data-testid="stVerticalBlock"],
+        div[class*="st-key-card_cost_st_donut"] > div[data-testid="stVerticalBlock"],
+        div[class*="st-key-card_total_head"] > div[data-testid="stVerticalBlock"],
+        div[class*="st-key-card_total_cost"] > div[data-testid="stVerticalBlock"] {{
+            height: 100%;
+        }}
+        div[class*="st-key-card_level_donut"] > div[data-testid="stVerticalBlock"] > div:last-child,
+        div[class*="st-key-card_staff_donut"] > div[data-testid="stVerticalBlock"] > div:last-child,
+        div[class*="st-key-card_cost_ns_donut"] > div[data-testid="stVerticalBlock"] > div:last-child,
+        div[class*="st-key-card_cost_st_donut"] > div[data-testid="stVerticalBlock"] > div:last-child,
+        div[class*="st-key-card_total_head"] > div[data-testid="stVerticalBlock"] > div:last-child,
+        div[class*="st-key-card_total_cost"] > div[data-testid="stVerticalBlock"] > div:last-child {{
+            margin-top: auto;
+        }}
+
         div[class*="st-key-card_"] {{ gap: 0.35rem !important; }}
         div[class*="st-key-card_"] div[data-testid="stVerticalBlock"] {{ gap: 0.35rem !important; }}
         div[class*="st-key-card_"] div[data-testid="stCaptionContainer"] p {{ margin-bottom: 0; }}
