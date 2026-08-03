@@ -914,28 +914,33 @@ def inject_css():
         }}
 
         /* Pemilih periode di section Cost — digayakan seperti tombol navy
-           supaya terbaca sebagai kontrol, bukan sebagai input form. Sejajar
-           dengan judul sectionnya. */
-        div[class*="st-key-period_pick"] {{ margin-top: 20px; }}
-        div[class*="st-key-period_pick"] div[data-baseweb="select"] > div {{
+           supaya terbaca sebagai kontrol, bukan sebagai input form.
+           Streamlit versi ini merender selectbox lewat react-aria (bukan
+           BaseWeb lagi), jadi selectornya menyasar .react-aria-ComboBox. */
+        div[class*="st-key-period_pick"] {{ margin-top: 18px; }}
+        div[class*="st-key-period_pick"] .react-aria-ComboBox > div {{
             background: {BRAND['navy']} !important;
             border: 1px solid {BRAND['navy']} !important;
             border-radius: 9px !important;
-            min-height: 40px !important;
-            cursor: pointer;
+            min-height: 42px !important;
+            cursor: pointer !important;
             transition: background .16s ease;
         }}
-        div[class*="st-key-period_pick"] div[data-baseweb="select"] > div:hover {{
-            background: #1B2C45 !important;
+        div[class*="st-key-period_pick"] .react-aria-ComboBox > div:hover {{
+            background: #1C2E48 !important;
         }}
-        div[class*="st-key-period_pick"] div[data-baseweb="select"] div,
-        div[class*="st-key-period_pick"] div[data-baseweb="select"] span {{
+        div[class*="st-key-period_pick"] .react-aria-ComboBox input {{
             color: #FFFFFF !important;
             font-weight: 800 !important;
-            font-size: 12.5px !important;
+            font-size: 13px !important;
+            cursor: pointer !important;
+            caret-color: transparent;
         }}
-        div[class*="st-key-period_pick"] div[data-baseweb="select"] svg {{
+        div[class*="st-key-period_pick"] .react-aria-ComboBox svg {{
             fill: #FFFFFF !important; color: #FFFFFF !important;
+        }}
+        div[class*="st-key-period_pick"] .react-aria-ComboBox button {{
+            background: transparent !important;
         }}
 
         /* daftar statistik ringkas di kartu (dipakai di bawah gauge cost) */
