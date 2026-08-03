@@ -31,6 +31,7 @@ from typing import List
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 import charts
 import theme
@@ -159,6 +160,7 @@ def aggregate_all_sites(backend, units_all, competency_factor: float) -> dict | 
     detail_rows, skipped, per_site, ok_sites = [], [], {}, []
     oper_acc: dict = {}
     plan_acc: dict = {}
+    supt_acc = 0
 
     for s in (backend.sites or []):
         rows = units_all.get(s) or []
@@ -184,7 +186,7 @@ def aggregate_all_sites(backend, units_all, competency_factor: float) -> dict | 
                 summ["electric_total"], get_staff(),
             )
         except (CalculationError, BackendDataError, KeyError, ValueError):
-            staff = {"operational": [], "planner": []}
+            staff = {"operational": [], "planner": [], "superintendent": 0}
         for r in staff["operational"]:
             acc = oper_acc.setdefault(
                 r["posisi"], {"posisi": r["posisi"], "jumlah_mekanik": 0,
@@ -193,8 +195,13 @@ def aggregate_all_sites(backend, units_all, competency_factor: float) -> dict | 
             acc["foreman"] += r["foreman"]
             acc["supervisor"] += r["supervisor"]
         for r in staff["planner"]:
-            acc = plan_acc.setdefault(r["posisi"], {"posisi": r["posisi"], "fte": 0})
+            acc = plan_acc.setdefault(
+                r["posisi"], {"posisi": r["posisi"], "foreman": 0,
+                              "fte": 0, "supervisor": 0})
+            acc["foreman"] += r["foreman"]
             acc["fte"] += r["fte"]
+            acc["supervisor"] += r["supervisor"]
+        supt_acc += staff.get("superintendent", 0)
         for cat, v in summ["mechanic_by_category"].items():
             mech_by_cat.setdefault(cat, _blank_levels())
             _add_levels(mech_by_cat[cat], v)
@@ -231,6 +238,9 @@ def aggregate_all_sites(backend, units_all, competency_factor: float) -> dict | 
         "unit_rows": sum(len(units_all.get(s) or []) for s in ok_sites),
         "operational": list(oper_acc.values()),
         "planner": list(plan_acc.values()),
+        # Superintendent dijumlahkan per site (masing-masing sudah dibulatkan
+        # 1:5 di sitenya), bukan dihitung ulang dari total SPV semua site.
+        "superintendent": supt_acc,
     }
     st.session_state[key] = out
     return out
@@ -241,12 +251,13 @@ ROLE_LEGEND = [
     ("Electrician", theme.ROLE_COLORS["Electric"]),
     ("Welder", theme.ROLE_COLORS["Welder"]),
 ]
+# Label level sengaja polos (M1/M2/M3 saja) — sebutan Senior/Middle/Junior
+# dihapus atas permintaan user.
 LEVEL_LEGEND = [
-    ("M1 · Senior", theme.LEVEL_SHADES["M1"]),
-    ("M2 · Middle", theme.LEVEL_SHADES["M2"]),
-    ("M3 · Junior", theme.LEVEL_SHADES["M3"]),
+    ("M1", theme.LEVEL_SHADES["M1"]),
+    ("M2", theme.LEVEL_SHADES["M2"]),
+    ("M3", theme.LEVEL_SHADES["M3"]),
 ]
-MONTHS_PER_YEAR = 12
 
 
 # ---------------------------------------------------------------------------
@@ -275,22 +286,29 @@ def formula_items(backend, unit_qty: float, site: str | None = None) -> list:
              if lost is not None else ""),
         ]
 
-    dists = [v for v in backend.jarak.values() if v is not None]
-    ratios = list(backend.ratio_shift.values())
-    losts = list(backend.lost_time.values())
-    ewh = [BASE_MECHANIC_HOURS - v for v in losts]
-    def rng(vals, dec=2, unit=""):
-        if not vals:
-            return ""
-        lo, hi = min(vals), max(vals)
-        if abs(hi - lo) < 1e-9:
-            return f"{num(lo, dec)}{unit}"
-        return f"{num(lo, dec)} – {num(hi, dec)}{unit}"
+    # Di mode Summary nilainya berbeda-beda per site, jadi ditulis per site
+    # ("ACP 1,46 · BCP 2,00 · KCP 1,43") alih-alih sebagai rentang — rentang
+    # menyembunyikan site mana yang punya angka mana.
+    sites = sorted(set(backend.jarak) | set(backend.ratio_shift) | set(backend.lost_time))
+
+    def per_site(mapping, dec=2, unit="", transform=None):
+        parts = []
+        for s_ in sites:
+            v = mapping.get(s_)
+            if v is None:
+                continue
+            if transform:
+                v = transform(v)
+            parts.append(f"{s_} <b>{num(v, dec)}{unit}</b>")
+        return " · ".join(parts)
+
     return [
         ("Unit quantity", num(unit_qty), "total units across all sites"),
-        ("Shift ratio", rng(ratios), "range across sites"),
-        ("Distance", rng(dists, 2, " km"), f"travel hours = distance / {TRAVEL_DIVISOR}"),
-        ("Effective working hour", rng(ewh, 2, " h"),
+        ("Shift ratio", per_site(backend.ratio_shift), "per site"),
+        ("Distance", per_site(backend.jarak, 2, " km"),
+         f"travel hours = distance / {TRAVEL_DIVISOR}"),
+        ("Effective working hour",
+         per_site(backend.lost_time, 2, " h", lambda v: BASE_MECHANIC_HOURS - v),
          f"{num(BASE_MECHANIC_HOURS)} − lost time"),
     ]
 
@@ -332,8 +350,17 @@ def render_formula_panel(items: list, detail_rows: list, with_site: bool = False
             df = unit_list_df(detail_rows, with_site)
             st.markdown(f"**Unit list — {len(df)} rows**")
             if len(df):
-                st.dataframe(df, width="stretch", hide_index=True,
-                             height=min(360, 40 + 35 * len(df)))
+                # Kartu parameter di atas memakai kolom tetap (selalu terlihat
+                # keempat-empatnya); yang boleh diubah lebarnya oleh user justru
+                # tabel unit ini.
+                st.dataframe(
+                    df, width="stretch", hide_index=True,
+                    height=min(360, 40 + 35 * len(df)),
+                    column_config={
+                        col: st.column_config.Column(col, width="medium")
+                        for col in df.columns
+                    },
+                )
             else:
                 st.info("No unit rows were calculated.")
             if skipped:
@@ -343,271 +370,441 @@ def render_formula_panel(items: list, detail_rows: list, with_site: bool = False
 
 
 # ---------------------------------------------------------------------------
-# Cost blocks — monthly and yearly share one builder
+# Dashboard body shared by Basecase All Unit and Summary
+#
+# Three sections, in this order:
+#   1  Non-Staff  — MPP per section + level composition
+#   2  Staff      — Foreman / Supervisor / Superintendent, grouped
+#   3  Cost       — non-staff and staff cost, monthly or yearly via dropdown
 # ---------------------------------------------------------------------------
-def cost_detail_table(cost: dict, head_counts: dict, grand_head: float,
-                      factor: int = 1) -> str:
-    """Role | MPP | M1 | M2 | M3 | Total.
+MONTHS_PER_YEAR = 12
 
-    MPP is a headcount; the four level columns are money. `factor` turns the
-    monthly figures into yearly ones without recomputing anything.
-    """
-    rows = []
-    for role in ("Mechanic", "Electric", "Welder"):
-        v = cost.get(role, {})
-        rows.append([
-            theme.ROLE_LABEL[role],
-            num(head_counts[role].get("Tot", 0)),
-            rp_short(v.get("M1", 0) * factor),
-            rp_short(v.get("M2", 0) * factor),
-            rp_short(v.get("M3", 0) * factor),
-            rp_short(v.get("Tot", 0) * factor),
-        ])
-    t = cost.get("Total", {})
-    return theme.table_html(
-        ["Role", "MPP", "M1", "M2", "M3", "Total"], rows,
-        total_row=[
-            "TOTAL", num(grand_head),
-            rp_short(t.get("M1", 0) * factor), rp_short(t.get("M2", 0) * factor),
-            rp_short(t.get("M3", 0) * factor), rp_short(t.get("Tot", 0) * factor),
-        ],
-        total_col=5,
-    )
-
-
-def render_cost_block(key: str, title: str, sub: str, cost: dict, head_counts: dict,
-                      grand_head: float, factor: int, per_head_label: str):
-    total = cost.get("Total", {}).get("Tot", 0) * factor
-    per_head = total / grand_head if grand_head else 0
-    with theme.card(key, title, sub, accent=theme.BRAND["orange_deep"]):
-        st.plotly_chart(
-            charts.cost_semicircle(
-                cost, rp_short(total), f"{rp_short(per_head)} {per_head_label}", height=200,
-            ),
-            width="stretch", config={"displayModeBar": False},
-        )
-        st.markdown(theme.legend_html(ROLE_LEGEND), unsafe_allow_html=True)
-        st.markdown(cost_detail_table(cost, head_counts, grand_head, factor),
-                    unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------------
-# Staff section (Foreman / Supervisor / Planner)
-# ---------------------------------------------------------------------------
 STAFF_COLORS = {
     "Foreman": theme.BRAND["orange"],
     "Supervisor": theme.BRAND["navy"],
-    "Planner": theme.BRAND["amber"],
+    "Superintendent": theme.BRAND["amber"],
+}
+# Operational memakai warna dasar, Planner memakai versi terang dari warna yang
+# sama — jadi satu tatapan cukup untuk membedakan grup DAN jabatan.
+GROUP_SHADE = {
+    ("Operational", "Foreman"): theme.BRAND["orange_deep"],
+    ("Planner", "Foreman"): theme.tint(theme.BRAND["orange"], 0.42),
+    ("Operational", "Supervisor"): theme.BRAND["navy"],
+    ("Planner", "Supervisor"): "#6B7C99",
+    ("Operational", "Superintendent"): theme.BRAND["amber"],
+    ("Planner", "Superintendent"): theme.tint(theme.BRAND["amber"], 0.45),
 }
 
 
-def render_staff_section(operational: list, planner: list):
-    """Staff gets its own section on the dashboard, mirroring the mechanic block.
+def section_totals(summary: dict) -> tuple[dict, dict, dict, dict, float]:
+    mech_total = {m: sum(v.get(m, 0) for v in summary["mechanic_by_category"].values())
+                  for m in MONTH_COLS}
+    mech_total["Tot"] = sum(mech_total[m] for m in MONTH_COLS)
+    weld = summary["welder_total"]
+    elec = summary["electric_total"]
+    level_totals = {m: mech_total.get(m, 0) + weld.get(m, 0) + elec.get(m, 0)
+                    for m in MONTH_COLS}
+    return mech_total, weld, elec, level_totals, sum(level_totals.values())
 
-    It used to be hidden inside the Details expander. Composition is shown as a
-    table rather than a chart on purpose: foreman and supervisor land on 1 per
-    section almost everywhere, so a bar chart of identical bars would carry no
-    information. The cost split, which IS proportional, gets the half circle.
+
+def cost_rows_by_section(summary: dict) -> list[tuple[str, dict]]:
+    """Cost per section (bukan per role) untuk tabel Cost / Non-Staff."""
+    rows = []
+    for cat, v in summary["mechanic_by_category"].items():
+        rows.append((cat, {m: v.get(m, 0) * COST_RATE[m] for m in MONTH_COLS}))
+    rows.append(("Welder", {m: summary["welder_total"].get(m, 0) * COST_RATE[m]
+                            for m in MONTH_COLS}))
+    rows.append(("Electrician", {m: summary["electric_total"].get(m, 0) * COST_RATE[m]
+                                 for m in MONTH_COLS}))
+    out = []
+    for name, lv in rows:
+        lv["Tot"] = sum(lv[m] for m in MONTH_COLS)
+        if lv["Tot"] > 0:
+            out.append((name, lv))
+    return out
+
+
+def staff_group_counts(staff: dict) -> dict:
+    """Ringkas hasil compute_staff_fte jadi hitungan per grup.
+
+    Superintendent dihitung site-level dari gabungan SPV Operational + Planner,
+    jadi ia TIDAK dipecah ke dalam grup — nilainya berdiri sebagai barisnya
+    sendiri di tabel dan sebagai irisan sendiri di pie chart.
     """
-    st.write("")
+    oper = staff.get("operational", [])
+    plan = staff.get("planner", [])
+    return {
+        "Operational": {
+            "Foreman": sum(r["foreman"] for r in oper),
+            "Supervisor": sum(r["supervisor"] for r in oper),
+        },
+        "Planner": {
+            "Foreman": sum(r["foreman"] for r in plan),
+            "Supervisor": sum(r["supervisor"] for r in plan),
+        },
+        "Superintendent": staff.get("superintendent", 0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 1 — Non-Staff
+# ---------------------------------------------------------------------------
+def render_non_staff(summary: dict):
+    mech_total, weld, elec, level_totals, grand = section_totals(summary)
+
     st.markdown(
-        theme.legend_strip("Staff", [("Foreman", STAFF_COLORS["Foreman"]),
-                                     ("Supervisor", STAFF_COLORS["Supervisor"]),
-                                     ("Planner", STAFF_COLORS["Planner"])]),
+        theme.section_heading(
+            1, "Non-Staff", "mechanic, electrician and welder manpower",
+            tag=f"{num(grand)} MPP"),
         unsafe_allow_html=True,
     )
 
-    if not operational and not planner:
+    # KPI: kartu Cost per month dihapus (cost punya sectionnya sendiri) dan
+    # ketiga kartu role kini memakai satuan yang SAMA — persentase terhadap
+    # total MPP non-staff — supaya bisa dibandingkan langsung.
+    k = st.columns(4, gap="small")
+    with k[0]:
         st.markdown(
-            theme.empty_state(
-                "No staff data",
-                "Fill in Area Kerja, Beban Admin and Jam Efektif on the Hasil Staff sheet.",
-                "🗂️",
-            ),
+            theme.kpi_card("Total MPP", num(grand), "mechanic + electrician + welder",
+                           accent=theme.BRAND["navy"], emoji="👷"),
             unsafe_allow_html=True,
         )
-        return
+    for col, (label, vals, role) in zip(
+        k[1:],
+        [("Mechanic", mech_total, "Mechanic"),
+         ("Electrician", elec, "Electric"),
+         ("Welder", weld, "Welder")],
+    ):
+        with col:
+            share = vals["Tot"] / grand * 100 if grand else 0
+            st.markdown(
+                theme.kpi_card(label, num(vals["Tot"]),
+                               f"<b>{num(share, 1)}%</b> of MPP", role=role),
+                unsafe_allow_html=True,
+            )
 
-    f_sum = sum(r["foreman"] for r in operational)
-    s_sum = sum(r["supervisor"] for r in operational)
-    p_sum = sum(r["fte"] for r in planner)
-    f_cost = f_sum * STAFF_COST_RATE["Foreman"]
-    s_cost = s_sum * STAFF_COST_RATE["Supervisor"]
-    # Planner memakai tarif yang sama dengan Foreman.
-    p_cost = p_sum * STAFF_COST_RATE["Planner"]
-    staff_cost = f_cost + s_cost + p_cost
-
-    s1, s2 = st.columns([1.6, 1], gap="small")
-
-    with s1:
-        with theme.card("staff_table", "Foreman & Supervisor per section",
-                        "one line per section, plus the planner roles",
-                        accent=theme.BRAND["navy"]):
-            rows = [
-                [r["posisi"], num(r["jumlah_mekanik"]), num(r["foreman"]),
-                 num(r["supervisor"]), num(r["foreman"] + r["supervisor"])]
-                for r in operational
-            ]
-            if rows:
-                st.markdown(
-                    theme.table_html(
-                        ["Section", "Mechanics", "Foreman", "Supervisor", "Total"], rows,
-                        total_row=["TOTAL", "–", num(f_sum), num(s_sum), num(f_sum + s_sum)],
-                        total_col=4,
-                    ),
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.info("No Foreman/Supervisor data for this scope yet.")
-
-            if planner:
-                st.write("")
-                st.markdown("**FTE Planner**")
-                st.markdown(
-                    theme.table_html(
-                        ["Position", "FTE"],
-                        [[r["posisi"], num(r["fte"])] for r in planner],
-                        total_row=["TOTAL", num(p_sum)], total_col=1,
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-    with s2:
-        with theme.card("staff_cost", "Staff cost",
-                        f"Foreman & Planner {rp_short(STAFF_COST_RATE['Foreman'], 1)} · "
-                        f"Supervisor {rp_short(STAFF_COST_RATE['Supervisor'], 1)} per month",
-                        accent=theme.BRAND["orange_deep"]):
+    st.write("")
+    a, b = st.columns([1.55, 1], gap="small")
+    with a:
+        with theme.card("total_section", "MPP per section",
+                        "bar length = section MPP · colour = level",
+                        accent=theme.LEVEL_SHADES["M2"]):
             st.plotly_chart(
-                charts.share_semicircle(
-                    ["Foreman", "Supervisor", "Planner"], [f_cost, s_cost, p_cost],
-                    [STAFF_COLORS["Foreman"], STAFF_COLORS["Supervisor"],
-                     STAFF_COLORS["Planner"]],
-                    rp_short(staff_cost),
-                    f"{rp_short(staff_cost * MONTHS_PER_YEAR)} per year",
-                    height=355,
-                ),
+                charts.level_stack_by_section_h(
+                    summary["mechanic_by_category"], weld, elec, height=340),
+                width="stretch", config={"displayModeBar": False},
+            )
+            st.markdown(theme.legend_html(LEVEL_LEGEND), unsafe_allow_html=True)
+    with b:
+        with theme.card("level_donut", "Level composition", "M1 – M3 across all roles",
+                        accent=theme.LEVEL_SHADES["M1"]):
+            st.plotly_chart(
+                charts.share_donut(
+                    MONTH_COLS, [level_totals[m] for m in MONTH_COLS],
+                    [theme.LEVEL_SHADES[m] for m in MONTH_COLS],
+                    num(grand), "TOTAL MPP", height=286),
                 width="stretch", config={"displayModeBar": False},
             )
             st.markdown(
-                theme.table_html(
-                    ["Role", "MPP", "Cost / month", "Cost / year"],
-                    [
-                        ["Foreman", num(f_sum), rp_short(f_cost),
-                         rp_short(f_cost * MONTHS_PER_YEAR)],
-                        ["Supervisor", num(s_sum), rp_short(s_cost),
-                         rp_short(s_cost * MONTHS_PER_YEAR)],
-                        ["Planner", num(p_sum), rp_short(p_cost),
-                         rp_short(p_cost * MONTHS_PER_YEAR)],
-                    ],
-                    total_row=["TOTAL", num(f_sum + s_sum + p_sum), rp_short(staff_cost),
-                               rp_short(staff_cost * MONTHS_PER_YEAR)],
-                    total_col=3,
-                ),
+                theme.donut_legend([
+                    (theme.LEVEL_SHADES[m], m, f"{num(level_totals[m])} FTE",
+                     f"{num(level_totals[m] / grand * 100, 1)}%" if grand else "0%")
+                    for m in MONTH_COLS
+                ]),
                 unsafe_allow_html=True,
             )
 
 
-
 # ---------------------------------------------------------------------------
-# Dashboard body shared by Basecase All Unit and Summary
+# 2 — Staff
 # ---------------------------------------------------------------------------
-def render_dashboard_body(summary: dict, cost: dict) -> dict:
-    mech_total = {m: sum(v.get(m, 0) for v in summary["mechanic_by_category"].values())
-                  for m in MONTH_COLS}
-    mech_total["Tot"] = sum(mech_total[m] for m in MONTH_COLS)
-    weld_total = summary["welder_total"]
-    elec_total = summary["electric_total"]
-
-    level_totals = {
-        m: mech_total.get(m, 0) + weld_total.get(m, 0) + elec_total.get(m, 0)
-        for m in MONTH_COLS
-    }
-    grand_total = sum(level_totals.values())
-    cost_total = cost["Total"]["Tot"]
-    head_counts = {"Mechanic": mech_total, "Electric": elec_total, "Welder": weld_total}
+def render_staff(staff: dict):
+    oper = staff.get("operational", [])
+    plan = staff.get("planner", [])
+    g = staff_group_counts(staff)
+    supt = g["Superintendent"]
+    total_head = (g["Operational"]["Foreman"] + g["Operational"]["Supervisor"]
+                  + g["Planner"]["Foreman"] + g["Planner"]["Supervisor"] + supt)
 
     st.markdown(
-        theme.legend_strip(
-            "Role colours", ROLE_LEGEND + [("M1 senior → M3 junior", theme.LEVEL_SHADES["M2"])]
-        ),
+        theme.section_heading(
+            2, "Staff", "foreman, supervisor and superintendent",
+            tag=f"{num(total_head)} MPP"),
         unsafe_allow_html=True,
     )
 
-    # ---------------- KPI ----------------
-    k = st.columns(5, gap="small")
-    with k[0]:
+    if not oper and not plan:
         st.markdown(
-            theme.kpi_card("Total MPP", num(grand_total), "",
-                           accent=theme.BRAND["navy"], emoji="👷"),
+            theme.empty_state(
+                "No staff data",
+                "Fill in Area Kerja, Beban Admin, Jam Efektif, k and k spv on the "
+                "Hasil Staff sheet.", "🗂️"),
             unsafe_allow_html=True,
         )
-    with k[1]:
-        share = mech_total["Tot"] / grand_total * 100 if grand_total else 0
-        st.markdown(
-            theme.kpi_card("Mechanic", num(mech_total["Tot"]),
-                           f"<b>{num(share, 0)}%</b> of MPP", role="Mechanic"),
-            unsafe_allow_html=True,
-        )
-    with k[2]:
-        st.markdown(
-            theme.kpi_card("Electrician", num(elec_total["Tot"]),
-                           f"M1 <b>{num(elec_total['M1'])}</b> · M2 <b>{num(elec_total['M2'])}</b>",
-                           role="Electric"),
-            unsafe_allow_html=True,
-        )
-    with k[3]:
-        st.markdown(
-            theme.kpi_card("Welder", num(weld_total["Tot"]),
-                           f"M1 <b>{num(weld_total['M1'])}</b> · M2 <b>{num(weld_total['M2'])}</b>",
-                           role="Welder"),
-            unsafe_allow_html=True,
-        )
-    with k[4]:
-        per_fte = cost_total / grand_total if grand_total else 0
-        st.markdown(
-            theme.kpi_card("Cost per month", rp_short(cost_total),
-                           f"<b>{rp_short(per_fte)}</b> per MPP",
-                           accent=theme.BRAND["orange_deep"], emoji="💰", value_size=21),
-            unsafe_allow_html=True,
-        )
+        return
 
-    st.write("")
+    a, b = st.columns([1.55, 1], gap="small")
 
-    # ------- row 1: one merged section chart + level composition -------
-    # Baris ini dulu dua chart terpisah (total per section, lalu persebaran
-    # M1-M3 di bawahnya). Stacked chart sudah mencetak total di atas tiap
-    # batang, jadi keduanya cukup jadi satu chart.
-    r1a, r1b = st.columns([1.6, 1], gap="small")
-    with r1a:
-        with theme.card("total_section", "MPP & level split per section",
-                        f"{len(summary['mechanic_by_category'])} unit categories "
-                        f"+ 2 company-wide roles · bar height = section MPP",
-                        accent=theme.LEVEL_SHADES["M2"]):
+    with a:
+        with theme.card("staff_table", "Staff per section",
+                        "grouped by Operational and Planner",
+                        accent=theme.BRAND["navy"]):
+            rows: list[list] = []
+            for r in oper:
+                rows.append([f"　{r['posisi']}", num(r["foreman"]),
+                             num(r["supervisor"]), "–",
+                             num(r["foreman"] + r["supervisor"])])
+            rows.insert(0, ["<b>OPERATIONAL</b>", "", "", "", ""])
+            rows.append(["<b>PLANNER</b>", "", "", "", ""])
+            for r in plan:
+                rows.append([f"　{r['posisi']}", num(r["foreman"]),
+                             num(r["supervisor"]), "–",
+                             num(r["foreman"] + r["supervisor"])])
+            rows.append(["<b>SUPERINTENDENT</b>", "–", "–", num(supt), num(supt)])
+            st.markdown(
+                theme.table_html(
+                    ["Section", "Foreman", "Supervisor", "Superintendent", "Total"],
+                    rows,
+                    total_row=[
+                        "TOTAL",
+                        num(g["Operational"]["Foreman"] + g["Planner"]["Foreman"]),
+                        num(g["Operational"]["Supervisor"] + g["Planner"]["Supervisor"]),
+                        num(supt), num(total_head),
+                    ],
+                    total_col=4,
+                ),
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<p class="dh-secnote">Superintendent is derived from the combined '
+                'Operational + Planner supervisor count at a 1:5 ratio, rounded up, '
+                'so it belongs to the site rather than to either group.</p>',
+                unsafe_allow_html=True,
+            )
+
+    with b:
+        parts = [
+            ("Foreman · Operational", g["Operational"]["Foreman"],
+             GROUP_SHADE[("Operational", "Foreman")]),
+            ("Foreman · Planner", g["Planner"]["Foreman"],
+             GROUP_SHADE[("Planner", "Foreman")]),
+            ("Supervisor · Operational", g["Operational"]["Supervisor"],
+             GROUP_SHADE[("Operational", "Supervisor")]),
+            ("Supervisor · Planner", g["Planner"]["Supervisor"],
+             GROUP_SHADE[("Planner", "Supervisor")]),
+            ("Superintendent", supt, STAFF_COLORS["Superintendent"]),
+        ]
+        with theme.card("staff_donut", "Staff composition",
+                        "darker = Operational, lighter = Planner",
+                        accent=theme.BRAND["orange_deep"]):
             st.plotly_chart(
-                charts.level_stack_by_section(
-                    summary["mechanic_by_category"], weld_total, elec_total, height=300),
+                charts.share_donut(
+                    [p[0] for p in parts], [p[1] for p in parts], [p[2] for p in parts],
+                    num(total_head), "STAFF MPP", height=286),
                 width="stretch", config={"displayModeBar": False},
             )
-            st.markdown(theme.legend_html(LEVEL_LEGEND), unsafe_allow_html=True)
-    with r1b:
-        with theme.card("level_donut", "M1 – M3 composition", "all roles",
+            st.markdown(
+                theme.donut_legend([
+                    (c, lbl, f"{num(v)} FTE",
+                     f"{num(v / total_head * 100, 1)}%" if total_head else "0%")
+                    for lbl, v, c in parts if v > 0
+                ]),
+                unsafe_allow_html=True,
+            )
+
+
+# ---------------------------------------------------------------------------
+# 3 — Cost
+# ---------------------------------------------------------------------------
+def render_cost(summary: dict, cost: dict, staff: dict):
+    st.markdown(
+        theme.section_heading(3, "Cost", "non-staff and staff, in one currency view"),
+        unsafe_allow_html=True,
+    )
+
+    # Satu dropdown menggantikan dua kartu berdampingan (monthly + yearly).
+    per = st.selectbox("Period", ["Monthly", "Yearly"], index=0, key="cost_period",
+                       label_visibility="collapsed")
+    factor = 1 if per == "Monthly" else MONTHS_PER_YEAR
+    suffix = "per month" if factor == 1 else "per year"
+
+    # ---------------- Non-Staff ----------------
+    sect_rows = cost_rows_by_section(summary)
+    ns_level = {m: sum(lv[m] for _n, lv in sect_rows) * factor for m in MONTH_COLS}
+    ns_total = sum(ns_level.values())
+
+    a, b = st.columns([1.55, 1], gap="small")
+    with a:
+        with theme.card("cost_ns_table", f"Non-Staff cost · {suffix}",
+                        "per section, split by level"):
+            st.markdown(
+                theme.table_html(
+                    ["Section", "M1", "M2", "M3", "Total"],
+                    [[name] + [rp_short(lv[m] * factor) for m in MONTH_COLS]
+                     + [rp_short(lv["Tot"] * factor)] for name, lv in sect_rows],
+                    total_row=["TOTAL"] + [rp_short(ns_level[m]) for m in MONTH_COLS]
+                    + [rp_short(ns_total)],
+                    total_col=4,
+                ),
+                unsafe_allow_html=True,
+            )
+    with b:
+        with theme.card("cost_ns_donut", "Level share", "proportion of non-staff cost",
                         accent=theme.LEVEL_SHADES["M1"]):
-            st.plotly_chart(charts.level_donut(level_totals, height=311), width="stretch",
-                            config={"displayModeBar": False})
+            st.plotly_chart(
+                charts.share_donut(
+                    MONTH_COLS, [ns_level[m] for m in MONTH_COLS],
+                    [theme.LEVEL_SHADES[m] for m in MONTH_COLS],
+                    rp_short(ns_total), suffix.upper(), height=250, money=True),
+                width="stretch", config={"displayModeBar": False},
+            )
+            st.markdown(
+                theme.donut_legend([
+                    (theme.LEVEL_SHADES[m], m, rp_short(ns_level[m]),
+                     f"{num(ns_level[m] / ns_total * 100, 1)}%" if ns_total else "0%")
+                    for m in MONTH_COLS
+                ]),
+                unsafe_allow_html=True,
+            )
 
-    # ------- row 2: monthly cost + yearly cost, identical shape -------
-    c1, c2 = st.columns(2, gap="small")
-    with c1:
-        render_cost_block("cost_month", "Cost per month", "colour = share per role",
-                          cost, head_counts, grand_total, 1, "per MPP / month")
-    with c2:
-        render_cost_block("cost_year", "Cost per year", f"monthly × {MONTHS_PER_YEAR}",
-                          cost, head_counts, grand_total, MONTHS_PER_YEAR, "per MPP / year")
+    # ---------------- Staff ----------------
+    g = staff_group_counts(staff)
+    supt = g["Superintendent"]
+    rate = {"Foreman": STAFF_COST_RATE["Foreman"],
+            "Supervisor": STAFF_COST_RATE["Supervisor"],
+            "Superintendent": STAFF_COST_RATE["Superintendent"]}
 
-    return {
-        "mech_total": mech_total, "weld_total": weld_total, "elec_total": elec_total,
-        "grand_total": grand_total, "cost_total": cost_total,
+    grp_cost = {
+        grp: {role: g[grp][role] * rate[role] * factor for role in ("Foreman", "Supervisor")}
+        for grp in ("Operational", "Planner")
     }
+    supt_cost = supt * rate["Superintendent"] * factor
+    staff_total = (sum(sum(v.values()) for v in grp_cost.values()) + supt_cost)
+
+    c, d = st.columns([1.55, 1], gap="small")
+    with c:
+        with theme.card("cost_st_table", f"Staff cost · {suffix}",
+                        "grouped by Operational and Planner", accent=theme.BRAND["navy"]):
+            rows = [
+                [grp, rp_short(grp_cost[grp]["Foreman"]),
+                 rp_short(grp_cost[grp]["Supervisor"]), "–",
+                 rp_short(sum(grp_cost[grp].values()))]
+                for grp in ("Operational", "Planner")
+            ]
+            rows.append(["Superintendent", "–", "–", rp_short(supt_cost),
+                         rp_short(supt_cost)])
+            st.markdown(
+                theme.table_html(
+                    ["Group", "Foreman", "Supervisor", "Superintendent", "Total"], rows,
+                    total_row=[
+                        "TOTAL",
+                        rp_short(grp_cost["Operational"]["Foreman"]
+                                 + grp_cost["Planner"]["Foreman"]),
+                        rp_short(grp_cost["Operational"]["Supervisor"]
+                                 + grp_cost["Planner"]["Supervisor"]),
+                        rp_short(supt_cost), rp_short(staff_total),
+                    ],
+                    total_col=4,
+                ),
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                theme.stat_list([
+                    (f"Rate · {r}", rp_short(rate[r], 1))
+                    for r in ("Foreman", "Supervisor", "Superintendent")
+                ]),
+                unsafe_allow_html=True,
+            )
+    with d:
+        parts = [
+            ("Foreman · Operational", grp_cost["Operational"]["Foreman"],
+             GROUP_SHADE[("Operational", "Foreman")]),
+            ("Foreman · Planner", grp_cost["Planner"]["Foreman"],
+             GROUP_SHADE[("Planner", "Foreman")]),
+            ("Supervisor · Operational", grp_cost["Operational"]["Supervisor"],
+             GROUP_SHADE[("Operational", "Supervisor")]),
+            ("Supervisor · Planner", grp_cost["Planner"]["Supervisor"],
+             GROUP_SHADE[("Planner", "Supervisor")]),
+            ("Superintendent", supt_cost, STAFF_COLORS["Superintendent"]),
+        ]
+        with theme.card("cost_st_donut", "Staff cost share",
+                        "darker = Operational, lighter = Planner",
+                        accent=theme.BRAND["orange_deep"]):
+            st.plotly_chart(
+                charts.share_donut(
+                    [p[0] for p in parts], [p[1] for p in parts], [p[2] for p in parts],
+                    rp_short(staff_total), suffix.upper(), height=250, money=True),
+                width="stretch", config={"displayModeBar": False},
+            )
+            st.markdown(
+                theme.donut_legend([
+                    (c_, lbl, rp_short(v),
+                     f"{num(v / staff_total * 100, 1)}%" if staff_total else "0%")
+                    for lbl, v, c_ in parts if v > 0
+                ]),
+                unsafe_allow_html=True,
+            )
+
+    # ---------------- Total ----------------
+    grand = ns_total + staff_total
+    e, f = st.columns([1.55, 1], gap="small")
+    with e:
+        with theme.card("cost_total", f"Total cost · {suffix}",
+                        "non-staff and staff combined",
+                        accent=theme.BRAND["orange_deep"]):
+            st.markdown(
+                theme.table_html(
+                    ["Component", "Cost", "Share"],
+                    [["Non-Staff", rp_short(ns_total),
+                      f"{num(ns_total / grand * 100, 1)}%" if grand else "0%"],
+                     ["Staff", rp_short(staff_total),
+                      f"{num(staff_total / grand * 100, 1)}%" if grand else "0%"]],
+                    total_row=["TOTAL COST", rp_short(grand), "100,0%"],
+                    total_col=1,
+                ),
+                unsafe_allow_html=True,
+            )
+            _mech, _w, _e, _lv, head_ns = section_totals(summary)
+            head_st = (g["Operational"]["Foreman"] + g["Operational"]["Supervisor"]
+                       + g["Planner"]["Foreman"] + g["Planner"]["Supervisor"] + supt)
+            head = head_ns + head_st
+            st.markdown(
+                theme.stat_list([
+                    ("Total headcount", f"{num(head)} MPP"),
+                    ("Cost per MPP", rp_short(grand / head if head else 0)),
+                    ("Non-Staff per MPP", rp_short(ns_total / head_ns if head_ns else 0)),
+                    ("Staff per MPP", rp_short(staff_total / head_st if head_st else 0)),
+                ]),
+                unsafe_allow_html=True,
+            )
+    with f:
+        with theme.card("cost_total_donut", "Non-Staff vs Staff", suffix,
+                        accent=theme.BRAND["amber"]):
+            st.plotly_chart(
+                charts.share_donut(
+                    ["Non-Staff", "Staff"], [ns_total, staff_total],
+                    [theme.BRAND["orange"], theme.BRAND["navy"]],
+                    rp_short(grand), "TOTAL COST", height=250, money=True),
+                width="stretch", config={"displayModeBar": False},
+            )
+            st.markdown(
+                theme.donut_legend([
+                    (theme.BRAND["orange"], "Non-Staff", rp_short(ns_total),
+                     f"{num(ns_total / grand * 100, 1)}%" if grand else "0%"),
+                    (theme.BRAND["navy"], "Staff", rp_short(staff_total),
+                     f"{num(staff_total / grand * 100, 1)}%" if grand else "0%"),
+                ]),
+                unsafe_allow_html=True,
+            )
+
+
+def render_dashboard_body(summary: dict, cost: dict, staff: dict) -> dict:
+    render_non_staff(summary)
+    render_staff(staff)
+    render_cost(summary, cost, staff)
+    mech_total, weld, elec, _lv, grand = section_totals(summary)
+    return {"mech_total": mech_total, "weld_total": weld, "elec_total": elec,
+            "grand_total": grand, "cost_total": cost["Total"]["Tot"]}
 
 
 def render_summary_tab(summary, mech_total, weld_total, elec_total, cost):
@@ -1052,8 +1249,7 @@ def render_basecase_mode(backend):
         formula_items(backend, unit_qty, site=site),
         summary["detail_rows"], with_site=False, skipped=summary["skipped_units"],
     )
-    totals = render_dashboard_body(summary, cost)
-    render_staff_section(staff_res["operational"], staff_res["planner"])
+    totals = render_dashboard_body(summary, cost, staff_res)
 
     render_details_section([
         ("MPP summary", lambda: render_summary_tab(
@@ -1124,8 +1320,11 @@ def render_summary_mode(backend):
         formula_items(backend, unit_qty),
         summary["detail_rows"], with_site=True, skipped=summary["skipped_units"],
     )
-    totals = render_dashboard_body(summary, cost)
-    render_staff_section(agg["operational"], agg["planner"])
+    totals = render_dashboard_body(summary, cost, {
+        "operational": agg["operational"],
+        "planner": agg["planner"],
+        "superintendent": agg["superintendent"],
+    })
 
     def _per_site_table():
         rows = [[s, rp_short(v), rp_short(v * MONTHS_PER_YEAR)]
@@ -1151,14 +1350,132 @@ def render_summary_mode(backend):
 
 
 # ===========================================================================
+# Landing page + embedded form pages
+# ===========================================================================
+DIRECTORATES = {
+    "engineer": {
+        "icon": "📐",
+        "title": "Engineer",
+        "accent": theme.BRAND["navy"],
+        "wash": "#E8EDF5",
+        "desc": "Engineering manpower request form. Submit the technical scope "
+                "of a position before it enters the workforce plan.",
+        "guide": [
+            "Site and department the request belongs to",
+            "Position title, level, and required competency",
+            "Scope of work and the equipment it covers",
+            "Target start date and the reason for the request",
+        ],
+        "url": "https://script.google.com/macros/s/AKfycbyCDxxEYFCMfgghj4KD_X1iqo49lkKlQfzpXj8FK-nGp30R1YLgIJnAeMlsEMXPtCSQ9w/exec",
+    },
+    "hcm": {
+        "icon": "🧭",
+        "title": "OD & HCM Strategy",
+        "accent": theme.BRAND["amber"],
+        "wash": "#FFF3D6",
+        "desc": "Organisation design and human capital strategy form. Used to "
+                "record structural changes before they are costed.",
+        "guide": [
+            "Organisation unit and its reporting line",
+            "Proposed structure change and its rationale",
+            "Roles affected, added, or removed",
+            "Effective period and the approval owner",
+        ],
+        "url": "https://script.google.com/macros/s/AKfycbxTMCA17k_yqY-WjZWXera6D_LYfk3M5lwwxRU08O-WLZeT5iASFe6_Vsbg6vIvDMPB2w/exec",
+    },
+    "plant": {
+        "icon": "⚙️",
+        "title": "Plant & Maintenance",
+        "accent": theme.BRAND["orange"],
+        "wash": "#FFE8D6",
+        "desc": "The FTE calculator itself. Turns unit population, physical "
+                "availability, and site parameters into manpower and cost.",
+        "guide": [
+            "Pick a site, or aggregate every site at once",
+            "Set the competency factor for the scenario",
+            "Review MPP per section, then staff, then cost",
+            "Unit data comes from Sheet9 automatically",
+        ],
+    },
+}
+
+
+def render_landing():
+    logo = theme.image_uri("logo_putih (2).png")
+    st.markdown(
+        theme.hero(
+            logo,
+            "PT Darma Henwa · Workforce Planning",
+            "Manpower Planning Workspace",
+            "Three entry points into the same workforce planning cycle. Pick the "
+            "one that matches what you are here to do — submit a request, record "
+            "an organisation change, or calculate manpower and cost.",
+        ),
+        unsafe_allow_html=True,
+    )
+    st.write("")
+
+    cols = st.columns(3, gap="medium")
+    for col, key in zip(cols, ("engineer", "hcm", "plant")):
+        d = DIRECTORATES[key]
+        with col:
+            st.markdown(
+                theme.choice_card(d["icon"], d["title"], d["desc"], d["guide"],
+                                  d["accent"], d["wash"]),
+                unsafe_allow_html=True,
+            )
+            with st.container(key=f"go_{key}"):
+                label = ("Open calculator" if key == "plant" else "Open form")
+                if st.button(label, width="stretch", key=f"btn_go_{key}",
+                             type="primary" if key == "plant" else "secondary"):
+                    st.session_state.page = key
+                    st.rerun()
+
+
+def render_embed_page(key: str):
+    """A form page that should not look like an embed.
+
+    The Apps Script form is served inside an iframe — there is no way around
+    that — so everything else is stripped back: no sidebar, no dashboard
+    chrome, just a slim bar with the title and a way home. The frame is given a
+    tall fixed height so the form scrolls as one page instead of inside a small
+    inner scroller, which is what usually makes embeds look bad.
+    """
+    d = DIRECTORATES[key]
+
+    st.markdown(
+        theme.header_band(d["title"], d["desc"]),
+        unsafe_allow_html=True,
+    )
+
+    nav1, _nav2 = st.columns([1, 4])
+    with nav1:
+        with st.container(key="embed_home"):
+            if st.button("← Back to home", width="stretch", key=f"home_{key}"):
+                st.session_state.page = "landing"
+                st.rerun()
+
+    with st.container(key="embed_frame"):
+        components.iframe(d["url"], height=1500, scrolling=True)
+
+
+# ===========================================================================
 def main():
+    st.session_state.setdefault("page", "landing")
+    page = st.session_state.page
+
+    if page == "landing":
+        render_landing()
+        return
+    if page in ("engineer", "hcm"):
+        render_embed_page(page)
+        return
+
     try:
         backend = get_backend()
     except BackendDataError as exc:
-        st.markdown(
-            theme.header_band("FTE Calculator", "PT Darma Henwa"),
-            unsafe_allow_html=True,
-        )
+        st.markdown(theme.header_band("FTE Calculator", "PT Darma Henwa"),
+                    unsafe_allow_html=True)
         st.error(f"BACKEND data failed to load: {exc}")
         return
 
@@ -1173,6 +1490,11 @@ def main():
             f'<div class="subtitle">PT Darma Henwa</div></div></div>',
             unsafe_allow_html=True,
         )
+        with st.container(key="side_home"):
+            if st.button("← Home", width="stretch", key="btn_home"):
+                st.session_state.page = "landing"
+                st.rerun()
+
         st.markdown('<div class="dh-side-label">Mode</div>', unsafe_allow_html=True)
         for key, label, container in (
             ("calculator", "Calculator", "nav_calc"),
