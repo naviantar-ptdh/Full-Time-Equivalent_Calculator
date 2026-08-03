@@ -596,12 +596,6 @@ def render_staff(staff: dict):
                 ),
                 unsafe_allow_html=True,
             )
-            st.markdown(
-                '<p class="dh-secnote">Superintendent is derived per group: '
-                'each group&rsquo;s supervisors are summed first, then a 1:5 '
-                'ratio rounded up — Operational and Planner separately.</p>',
-                unsafe_allow_html=True,
-            )
 
     with b:
         parts = staff_parts(g)
@@ -611,7 +605,7 @@ def render_staff(staff: dict):
             st.plotly_chart(
                 charts.share_donut(
                     [p[0] for p in parts], [p[1] for p in parts], [p[2] for p in parts],
-                    num(tot["Tot"]), "STAFF MPP", height=316),
+                    num(tot["Tot"]), "STAFF MPP", height=266),
                 width="stretch", config={"displayModeBar": False},
             )
             st.markdown(
@@ -792,14 +786,13 @@ def render_cost(summary: dict, cost: dict, staff: dict):
                      f"{num(head_ns / grand_head * 100, 1)}%" if grand_head else "0%"),
                     ("Staff share",
                      f"{num(tot_head['Tot'] / grand_head * 100, 1)}%" if grand_head else "0%"),
-                    ("Non-Staff per staff",
-                     f"{num(head_ns / tot_head['Tot'], 1)} : 1" if tot_head["Tot"] else "–"),
                 ]),
                 unsafe_allow_html=True,
             )
     with f:
+        cpm = rp_short(grand_cost / grand_head if grand_head else 0)
         with theme.card("total_cost", f"Total cost · {suffix}",
-                        "follows the period filter",
+                        f"{cpm} per MPP · follows the period filter",
                         accent=theme.BRAND["orange_deep"]):
             st.markdown(
                 theme.table_html(
@@ -815,7 +808,6 @@ def render_cost(summary: dict, cost: dict, staff: dict):
             )
             st.markdown(
                 theme.stat_list([
-                    ("Cost per MPP", rp_short(grand_cost / grand_head if grand_head else 0)),
                     ("Non-Staff share",
                      f"{num(ns_total / grand_cost * 100, 1)}%" if grand_cost else "0%"),
                     ("Staff share",
@@ -1305,7 +1297,7 @@ DIRECTORATES = {
         "title": "OD & HCM Strategy",
         "accent": theme.BRAND["amber"],
         "wash": "#FFF4DC",
-        "desc": "Record the field that sets how many hours a mechanic "
+        "desc": "Record the field study that sets how many hours a mechanic "
                 "actually works.",
         "fills": "Fills in the <b>Mechanic Observation Form</b> — effective "
                  "mechanic working hour.",
