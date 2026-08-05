@@ -603,15 +603,24 @@ def parse_staff_sheet(raw: pd.DataFrame) -> List[StaffRow]:
             posisi=posisi,
             category_posisi=_col_text(df, r, 1),
             site=_col_text(df, r, 2),
-            rasio_roster=_safe_float(_cell(df, r, 3)),
-            area_kerja=_safe_float(_cell(df, r, 4)),
-            beban_admin=_safe_float(_cell(df, r, 5)),
-            jam_efektif=_safe_float(_cell(df, r, 6)),
-            jam_supervisi=_safe_float(_cell(df, r, 7)),
-            ewdy=_safe_float(_cell(df, r, 8)),
-            k=_safe_float(_cell(df, r, 9)),
-            k_spv=_safe_float(_cell(df, r, 10)),
-            fte_spv_lookup=_safe_float(_cell(df, r, 13)),
+            # Indeks kolom mengikuti layout sheet 'Hasil Staff':
+            #   0 Posisi | 1 Category posisi | 2 Site | 3 Jumlah Mechanic
+            #   4 Rasio Roster | 5 Area Kerja | 6 Beban Kerja Administratif
+            #   7 Jam kerja Efektif Staff | 8 Jam Supervisi | 9 EWDY
+            #   10 k | 11 k spv | 12 Contoh FTE | 13 Rumus FTE | 14 FTE SPV
+            # Sebelumnya semua indeks dari Rasio Roster ke kanan bergeser satu
+            # ke kiri, sehingga `k` justru membaca kolom EWDY (nilainya 253).
+            # Karena k dipakai sebagai eksponen (base ** k), itu membuat hasil
+            # meledak jadi angka astronomis atau OverflowError.
+            rasio_roster=_safe_float(_cell(df, r, 4)),
+            area_kerja=_safe_float(_cell(df, r, 5)),
+            beban_admin=_safe_float(_cell(df, r, 6)),
+            jam_efektif=_safe_float(_cell(df, r, 7)),
+            jam_supervisi=_safe_float(_cell(df, r, 8)),
+            ewdy=_safe_float(_cell(df, r, 9)),
+            k=_safe_float(_cell(df, r, 10)),
+            k_spv=_safe_float(_cell(df, r, 11)),
+            fte_spv_lookup=_safe_float(_cell(df, r, 14)),
         ))
         r += 1
     return records
