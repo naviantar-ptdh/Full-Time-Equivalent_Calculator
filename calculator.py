@@ -394,14 +394,29 @@ def compute_staff_fte(
             return d["Tot"]
         return sum(d.get(m, 0.0) for m in ("M1", "M2", "M3"))
 
-    def _staff_fte(beban, base, k, h, ewdy, area, rasio, jam_efektif) -> int:
+    def _staff_fte(beban, base, k, h, ewdy, area, rasio, jam_efektif):
         """(BebanAdmin + base^k * H * EWDY * AreaKerja) * RasioRoster / JamEfektif.
 
         `h` diisi 1.0 untuk Supervisor, karena rumus SPV di sheet tidak lagi
         mengalikan Jam Supervisi.
+
+        Mengembalikan None (bukan crash) kalau `base ** k` meledak di luar
+        jangkauan float — ini terjadi kalau nilai k / k spv di sheet Hasil
+        Staff tidak wajar (harusnya sekitar 1-2, bukan puluhan/ratusan).
+        Baris dengan hasil None dilewati oleh pemanggilnya, konsisten dengan
+        baris berdata tidak lengkap lain yang juga dilewati diam-diam.
         """
-        beban_supervisi = (base ** k) * h * ewdy * area if base > 0 else 0.0
-        return math.ceil((beban + beban_supervisi) * rasio / jam_efektif)
+        if base <= 0:
+            beban_supervisi = 0.0
+        else:
+            try:
+                beban_supervisi = (base ** k) * h * ewdy * area
+            except OverflowError:
+                return None
+        try:
+            return math.ceil((beban + beban_supervisi) * rasio / jam_efektif)
+        except (OverflowError, ValueError):
+            return None
 
     mech_by_norm = {norm(k): v for k, v in mechanic_by_category.items()}
     site_rows = [r for r in staff_rows if r.site.strip().lower() == site.strip().lower()]
@@ -450,8 +465,12 @@ def compute_staff_fte(
 
             foreman = _staff_fte(row.beban_admin, jumlah_mekanik, k, h, ewdy,
                                  row.area_kerja, rasio, row.jam_efektif)
+            if foreman is None:
+                continue  # k tidak wajar untuk baris ini -> dilewati, lihat _staff_fte
             supervisor = _staff_fte(row.beban_admin, foreman, k_spv, 1.0, ewdy,
                                     row.area_kerja, rasio, row.jam_efektif)
+            if supervisor is None:
+                continue  # k_spv tidak wajar untuk baris ini -> dilewati
             operational.append({
                 "posisi": row.posisi,
                 "jumlah_mekanik": jumlah_mekanik,
