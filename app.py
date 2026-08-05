@@ -1293,7 +1293,8 @@ DIRECTORATES = {
         "title": "Engineer",
         "accent": theme.BRAND["navy"],
         "wash": "#EAEFF6",
-        "desc": "Submit the unit population that the manpower calculation is "
+        "desc": "Submit the unit population that the manpower calculation is 
+                "
                 "built from.",
         "fills": "Fills in the <b>Unit Form</b> — category, unit type and PA.",
         "url": "https://script.google.com/macros/s/AKfycbyCDxxEYFCMfgghj4KD_X1iqo49lkKlQfzpXj8FK-nGp30R1YLgIJnAeMlsEMXPtCSQ9w/exec",
@@ -1306,7 +1307,7 @@ DIRECTORATES = {
         "desc": "Record the field that sets how many hours a mechanic "
                 "actually works.",
         "fills": "Fills in the <b>Mechanic Observation Form</b> — effective "
-                 "mechanic working hour.",
+                 "mechanic hour.",
         "url": "https://script.google.com/macros/s/AKfycbxTMCA17k_yqY-WjZWXera6D_LYfk3M5lwwxRU08O-WLZeT5iASFe6_Vsbg6vIvDMPB2w/exec",
     },
     "plant": {
@@ -1315,7 +1316,8 @@ DIRECTORATES = {
         "accent": theme.BRAND["orange"],
         "wash": "#FFEEE0",
         "desc": "Turn unit population and site parameters into manpower and "
-                "cost.",
+                "cost.
+                ",
         "fills": "Opens the <b>FTE Calculator</b> — MPP, staff and cost.",
     },
 }
