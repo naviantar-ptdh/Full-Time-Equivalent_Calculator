@@ -533,6 +533,33 @@ def inject_css():
             box-shadow: 0 4px 10px -4px rgba(217,78,0,.6);
         }}
 
+        /* Tombol kartu landing. Sebelumnya tidak punya aturan sendiri, jadi
+           tombol type="primary" ("Open calculator") memakai warna primary
+           bawaan Streamlit yang merah — bertabrakan dengan palet orange. */
+        div[class*="st-key-go_"] {{ margin-top: 10px; }}
+        div[class*="st-key-go_"] button {{
+            border-radius: 10px !important; height: 44px;
+            font-weight: 700 !important; font-size: 13px !important;
+            background: {NEUTRAL['card']} !important;
+            color: {NEUTRAL['text']} !important;
+            border: 1px solid {NEUTRAL['border']} !important;
+        }}
+        div[class*="st-key-go_"] button:hover {{
+            border-color: {BRAND['orange']} !important;
+            color: {BRAND['orange']} !important;
+            background: {tint(BRAND['orange'], .95)} !important;
+        }}
+        div[class*="st-key-go_"] button[kind="primary"] {{
+            background: linear-gradient(135deg, {BRAND['orange_deep']}, {BRAND['orange']}) !important;
+            border-color: transparent !important; color: #fff !important;
+            font-weight: 800 !important;
+            box-shadow: 0 6px 14px -6px rgba(217,78,0,.65);
+        }}
+        div[class*="st-key-go_"] button[kind="primary"]:hover {{
+            color: #fff !important;
+            background: linear-gradient(135deg, {BRAND['orange_deep']}, {BRAND['orange']}) !important;
+        }}
+
         /* tombol utama */
         div[class*="st-key-sb_compute"] button, div[class*="st-key-calc_go"] button {{
             background: linear-gradient(135deg, {BRAND['orange_deep']}, {BRAND['orange']}) !important;
@@ -936,6 +963,11 @@ def inject_css():
             border: 1px solid {NEUTRAL['border']};
             border-radius: 16px; padding: 22px 20px 18px 20px;
             min-height: 196px;
+            /* Ketiga kartu landing harus berakhir di tinggi yang sama supaya
+               tombol di bawahnya sejajar. Panjang teks deskripsi tiap kartu
+               berbeda, jadi tanpa height:100% kartu yang teksnya pendek jadi
+               lebih pendek dan tombolnya naik sendiri. */
+            height: 100%;
             box-shadow: 0 2px 10px -7px rgba(16,24,40,.22);
             transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
             animation: dh-rise .5s ease both;
