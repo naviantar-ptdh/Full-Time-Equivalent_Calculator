@@ -1293,8 +1293,7 @@ DIRECTORATES = {
         "title": "Engineer",
         "accent": theme.BRAND["navy"],
         "wash": "#EAEFF6",
-        "desc": "Submit the unit population that the manpower calculation is 
-                "
+        "desc": "Submit the unit population that the manpower calculation is ",
                 "built from.",
         "fills": "Fills in the <b>Unit Form</b> — category, unit type and PA.",
         "url": "https://script.google.com/macros/s/AKfycbyCDxxEYFCMfgghj4KD_X1iqo49lkKlQfzpXj8FK-nGp30R1YLgIJnAeMlsEMXPtCSQ9w/exec",
