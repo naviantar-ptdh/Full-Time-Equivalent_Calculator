@@ -3,6 +3,8 @@
 # Solution: Pin to compatible versions
 
 streamlit==1.42.1
+starlette==0.37.0
+uvicorn==0.30.0
 pandas>=2.0
 requests>=2.31
 plotly>=5.24
