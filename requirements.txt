@@ -2,7 +2,7 @@
 # Issue: Streamlit version mismatch with Starlette/Uvicorn
 # Solution: Pin to compatible versions
 
-streamlit==1.40.2
+streamlit==1.42.1
 pandas>=2.0
 requests>=2.31
 plotly>=5.24
