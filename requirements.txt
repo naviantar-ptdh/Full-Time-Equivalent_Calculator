@@ -1,4 +1,12 @@
+# FTE Calculator - Fixed Requirements
+# Issue: Streamlit version mismatch with Starlette/Uvicorn
+# Solution: Pin to compatible versions
+
 streamlit==1.40.2
 pandas>=2.0
 requests>=2.31
 plotly>=5.24
+
+# Optional: Explicitly pin problematic dependencies for clarity
+# starlette==0.37.0
+# uvicorn==0.30.0
