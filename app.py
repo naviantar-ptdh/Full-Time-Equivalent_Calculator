@@ -1293,7 +1293,7 @@ DIRECTORATES = {
         "title": "Engineer",
         "accent": theme.BRAND["navy"],
         "wash": "#EAEFF6",
-        "desc": "Submit the unit population that the manpower calculation is "
+        "desc": "Submit the unit population that the MPP calculation is "
                 "built from.",
         "fills": "Fills in the <b>Unit Form</b> — category, unit type and PA.",
         "url": "https://script.google.com/macros/s/AKfycbyCDxxEYFCMfgghj4KD_X1iqo49lkKlQfzpXj8FK-nGp30R1YLgIJnAeMlsEMXPtCSQ9w/exec",
@@ -1303,9 +1303,9 @@ DIRECTORATES = {
         "title": "OD & HCM Strategy",
         "accent": theme.BRAND["amber"],
         "wash": "#FFF4DC",
-        "desc": "Record the field that sets how many hours a mechanic "
+        "desc": "Record field that sets how many hours a mechanic "
                 "actually works.",
-        "fills": "Fills in the <b>Mechanic Observation Form</b> — effective "
+        "fills": "Fills in the <b>Observation Form</b> — effective "
                  "mechanic working hour.",
         "url": "https://script.google.com/macros/s/AKfycbxTMCA17k_yqY-WjZWXera6D_LYfk3M5lwwxRU08O-WLZeT5iASFe6_Vsbg6vIvDMPB2w/exec",
     },
