@@ -1315,8 +1315,7 @@ DIRECTORATES = {
         "accent": theme.BRAND["orange"],
         "wash": "#FFEEE0",
         "desc": "Turn unit population and site parameters into manpower and "
-                "cost.
-                ",
+                "cost.",
         "fills": "Opens the <b>FTE Calculator</b> — MPP, staff and cost.",
     },
 }
