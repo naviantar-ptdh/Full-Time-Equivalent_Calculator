@@ -85,12 +85,6 @@ class BackendData:
         Kalau site tidak terdaftar di seksi BACKEND (mis. site baru yang belum
         diisi lewat form Plant & Maintenance), dipakai nilai default supaya
         perhitungan tetap jalan alih-alih gagal total.
-
-        Nilainya juga dijaga tetap di rentang (0, 1]. Faktor ini dipakai
-        sebagai PEMBAGI di `calculator.base_factor`, jadi nilai di luar
-        rentang tidak sekadar bikin hasil meleset sedikit — ia menggeser
-        SELURUH angka manpower satu-dua orde besaran, dan itu tidak kelihatan
-        sebagai error, hanya sebagai angka yang "aneh".
         """
         if not site:
             return self.DEFAULT_COMPETENCY_FACTOR
@@ -102,11 +96,7 @@ class BackendData:
                     break
         if val is None or not (val == val) or val <= 0:   # None / NaN / <= 0
             return self.DEFAULT_COMPETENCY_FACTOR
-        val = float(val)
-        if val > 1.0:
-            # Sudah ditangani _parse_fraction_cell, ini jaring pengaman terakhir.
-            val = val / 100.0 if val <= 100.0 else self.DEFAULT_COMPETENCY_FACTOR
-        return val if 0 < val <= 1.0 else self.DEFAULT_COMPETENCY_FACTOR
+        return float(val)
 
     def first_site(self) -> Optional[str]:
         return self.sites[0] if self.sites else None
@@ -493,12 +483,7 @@ def parse_backend(raw: pd.DataFrame) -> BackendData:
             j += 1
         pairs, _tcf_end = _read_vertical_pairs_safe(df, j)
         for site, val in pairs:
-            # _parse_fraction_cell, BUKAN _safe_float: sel ini di Google Sheets
-            # sering diformat sebagai persen, sehingga ter-ekspor jadi teks
-            # "85.00%" dan terbaca 85.0 oleh _safe_float. Nilai itu lalu dipakai
-            # sebagai PEMBAGI di calculator.base_factor, jadi salahnya 100x dan
-            # seluruh angka manpower runtuh (mis. 200 mekanik jadi 2).
-            v = _parse_fraction_cell(val)
+            v = _safe_float(val)
             if v == v and v > 0:          # buang NaN / nol
                 competency_factor[site] = v
     else:
