@@ -72,6 +72,41 @@ class BackendData:
     jarak: Dict[str, float] = field(default_factory=dict)            # Site -> km (v2, ganti input manual)
     classification: Dict[str, str] = field(default_factory=dict)     # canonical sub-category -> Category (v2)
     classification_order: List[str] = field(default_factory=list)    # urutan kemunculan Category asli (v2)
+    # v7: Technical Competency Factor per site, diisi lewat form Plant &
+    # Maintenance (Apps Script) dan dibaca dari seksi BACKEND, bukan lagi
+    # slider manual di sidebar.
+    competency_factor: Dict[str, float] = field(default_factory=dict)  # Site -> TCF
+
+    DEFAULT_COMPETENCY_FACTOR = 0.8
+
+    def tcf_for(self, site: Optional[str]) -> float:
+        """Technical Competency Factor untuk sebuah site.
+
+        Kalau site tidak terdaftar di seksi BACKEND (mis. site baru yang belum
+        diisi lewat form Plant & Maintenance), dipakai nilai default supaya
+        perhitungan tetap jalan alih-alih gagal total.
+
+        Nilainya juga dijaga tetap di rentang (0, 1]. Faktor ini dipakai
+        sebagai PEMBAGI di `calculator.base_factor`, jadi nilai di luar
+        rentang tidak sekadar bikin hasil meleset sedikit — ia menggeser
+        SELURUH angka manpower satu-dua orde besaran, dan itu tidak kelihatan
+        sebagai error, hanya sebagai angka yang "aneh".
+        """
+        if not site:
+            return self.DEFAULT_COMPETENCY_FACTOR
+        val = self.competency_factor.get(site)
+        if val is None:
+            for k, v in self.competency_factor.items():
+                if k.strip().lower() == site.strip().lower():
+                    val = v
+                    break
+        if val is None or not (val == val) or val <= 0:   # None / NaN / <= 0
+            return self.DEFAULT_COMPETENCY_FACTOR
+        val = float(val)
+        if val > 1.0:
+            # Sudah ditangani _parse_fraction_cell, ini jaring pengaman terakhir.
+            val = val / 100.0 if val <= 100.0 else self.DEFAULT_COMPETENCY_FACTOR
+        return val if 0 < val <= 1.0 else self.DEFAULT_COMPETENCY_FACTOR
 
     def first_site(self) -> Optional[str]:
         return self.sites[0] if self.sites else None
@@ -440,6 +475,38 @@ def parse_backend(raw: pd.DataFrame) -> BackendData:
     else:
         logger.warning("Seksi 'Clasification' tidak ditemukan (v2) — summary tidak akan dikelompokkan per kategori.")
 
+    # =========================================================
+    # Blok 10 (v7): Technical Competency Factor (Site -> faktor)
+    # Diisi lewat form Plant & Maintenance (Apps Script). Dicari dari awal
+    # sheet, bukan dari `jarak_end`, karena seksi ini ditulis di bawah blok
+    # Clasification yang panjangnya berubah-ubah.
+    # =========================================================
+    competency_factor: Dict[str, float] = {}
+    tcf_title_idx = _find_title_row(df, "technical competency factor")
+    if tcf_title_idx is None:
+        tcf_title_idx = _find_title_row(df, "competency factor")
+    if tcf_title_idx is not None:
+        j = tcf_title_idx + 1
+        while j < len(df) and _is_blank_row(df, j):
+            j += 1
+        if j < len(df) and "site" in _col_text(df, j, 0).lower():
+            j += 1
+        pairs, _tcf_end = _read_vertical_pairs_safe(df, j)
+        for site, val in pairs:
+            # _parse_fraction_cell, BUKAN _safe_float: sel ini di Google Sheets
+            # sering diformat sebagai persen, sehingga ter-ekspor jadi teks
+            # "85.00%" dan terbaca 85.0 oleh _safe_float. Nilai itu lalu dipakai
+            # sebagai PEMBAGI di calculator.base_factor, jadi salahnya 100x dan
+            # seluruh angka manpower runtuh (mis. 200 mekanik jadi 2).
+            v = _parse_fraction_cell(val)
+            if v == v and v > 0:          # buang NaN / nol
+                competency_factor[site] = v
+    else:
+        logger.warning(
+            "Seksi 'Technical Competency Factor' tidak ditemukan — dipakai nilai default %.2f.",
+            BackendData.DEFAULT_COMPETENCY_FACTOR,
+        )
+
     sites = list(ratio_shift.keys()) or list(lost_time.keys())
 
     bd = BackendData(
@@ -457,6 +524,7 @@ def parse_backend(raw: pd.DataFrame) -> BackendData:
         jarak=jarak,
         classification=classification,
         classification_order=classification_order,
+        competency_factor=competency_factor,
     )
     return bd
 
