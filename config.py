@@ -22,11 +22,22 @@ STAFF_SHEET_GID = "997738201"
 UNIT_EDIT_PASSWORD = "DHRising"
 
 # Endpoint export CSV publik (spreadsheet harus di-share minimal "Anyone with link - Viewer")
+#
+# Parameter `_cb` (cache buster) WAJIB ada. Endpoint gviz/export Google
+# dilayani lewat CDN dan sering mengembalikan salinan LAMA selama beberapa
+# menit walau spreadsheet-nya sudah diubah. Karena URL-nya persis sama, CDN
+# menganggapnya permintaan yang sama. Menyisipkan nilai yang selalu berubah
+# membuat tiap pengambilan jadi URL unik, sehingga selalu menembus ke sumber.
+#
+# Ini tidak membuat aplikasi jadi sering menembak Google: URL hanya dibangun
+# saat cache Streamlit meleset (lihat CACHE_TTL_SECONDS), bukan tiap rerun.
 def gsheet_csv_url(sheet_name: str, spreadsheet_id: str = SPREADSHEET_ID) -> str:
     from urllib.parse import quote
+    import time
     return (
         f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
         f"/gviz/tq?tqx=out:csv&sheet={quote(sheet_name)}"
+        f"&_cb={int(time.time())}"
     )
 
 # Konstanta rumus (sesuai sheet "Final Calculation")
@@ -43,16 +54,27 @@ COST_RATE = {
 
 # Cost rate per staff FTE (Rp) - asumsi manual dari user, bukan dari BACKEND
 STAFF_COST_RATE = {
-    "Foreman": 11_500_000,
-    "Supervisor": 13_000_000,
-    "Planner": 11_500_000,      # sama dengan Foreman, sesuai arahan user
-    # PLACEHOLDER - user belum memberi tarif Superintendent. Ganti angka ini
-    # begitu tarif resminya ada; seluruh tabel Cost membacanya dari sini.
-    "Superintendent": 15_000_000,
+    "Foreman": 9_000_000,
+    "Supervisor": 12_000_000,
+    "Superintendent": 17_000_000,
+    # CATATAN: kunci ini TIDAK PERNAH DIBACA. app.py hanya mengambil tarif
+    # untuk STAFF_ROLES = (Foreman, Supervisor, Superintendent), termasuk
+    # untuk grup Planning — Foreman Planning ikut memakai tarif "Foreman"
+    # di atas. Dibiarkan di sini supaya tidak ada yang mengira tarif Planning
+    # hilang; hapus saja kalau memang tidak akan dipakai.
+    "Planner": 9_000_000,
 }
 
 ROLES = ["Mechanic", "Electric", "Welder"]
 MONTH_COLS = ["M1", "M2", "M3"]
 
-# Cache TTL untuk data BACKEND (detik)
-CACHE_TTL_SECONDS = 600
+# Cache TTL untuk data BACKEND (detik).
+#
+# Sengaja pendek: ketiga form (Engineering, OD & HCM, Plant & Maintenance)
+# menulis langsung ke spreadsheet, dan orang yang baru menyimpan nilai wajar
+# berharap angkanya segera terlihat di dashboard. TTL panjang membuat
+# perubahan seolah "tidak tersimpan" padahal sudah masuk ke sheet.
+#
+# Nilai ini dibaca app.py; jangan menulis angka ttl langsung di dekorator
+# @st.cache_data, nanti konstanta ini jadi tidak berpengaruh.
+CACHE_TTL_SECONDS = 60
